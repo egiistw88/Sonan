@@ -3,11 +3,11 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-    // Load env file based on `mode` in the current working directory.
+    // Load env file dari komputer lokal (jika ada)
     const env = loadEnv(mode, process.cwd(), '');
     
-    // Ambil API Key dari process.env (Vercel) ATAU dari file .env lokal
-    // Jika tidak ada, pakai string kosong agar tidak error
+    // Ambil API Key dari Vercel System (process.env) ATAU file .env lokal
+    // Jika tidak ketemu, kita kasih string kosong '' (JANGAN undefined, nanti crash)
     const apiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || '';
 
     return {
@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        // Kita pasang pengaman di sini
+        // Stringify kunci agar tertanam aman di kode frontend
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
       },
