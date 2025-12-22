@@ -1,0 +1,8 @@
+{
+  "name": "SONAN (Sobat Jalanan)",
+  "description": "Asisten pintar driver Maxim dengan fitur Jejak Rejeki untuk menandai spot orderan gacor.",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ]
+}
