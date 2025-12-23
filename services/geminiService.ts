@@ -4,12 +4,14 @@ import { GacorSpot, StrategyTip } from "../types";
 
 // Safety check for API Key
 const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-  console.error("CRITICAL: API_KEY is missing in environment variables.");
-}
 
-// Inisialisasi dengan key (atau string kosong agar tidak crash saat init, error akan ditangkap saat call)
-const ai = new GoogleGenAI({ apiKey: API_KEY || "" });
+// Jika API Key tidak ada (lupa setting di Vercel), gunakan dummy agar app tidak crash saat dibuka
+// Nanti akan error saat user mencoba fitur AI, tapi UI utama tetap jalan.
+const ai = new GoogleGenAI({ apiKey: API_KEY || "dummy_key_for_rendering_ui" });
+
+if (!API_KEY) {
+  console.warn("WARNING: API_KEY is missing. AI features will not work. Please set it in Vercel Settings.");
+}
 
 // --- PERSISTENT CACHE SYSTEM (localStorage) ---
 // Menggunakan localStorage agar data bertahan reload page / switch app
@@ -104,6 +106,16 @@ export const fetchWeatherAndInsight = async (lat: number, lng: number) => {
     return cached;
   }
 
+  // Jika API Key tidak ada, jangan panggil Gemini, return default langsung
+  if (!API_KEY) {
+    return {
+      location: "Mode Tanpa Kunci",
+      temp: "--",
+      condition: "API Key Missing",
+      advice: "Silakan set API Key di dashboard Vercel."
+    };
+  }
+
   try {
     const prompt = `
       Saya driver ojek online. Koordinat: ${lat}, ${lng}.
@@ -130,7 +142,6 @@ export const fetchWeatherAndInsight = async (lat: number, lng: number) => {
 
   } catch (error) {
     console.error("Gemini Weather Error:", error);
-    // Return stale cache if available (even if expired) rather than showing error
     const staleItem = localStorage.getItem(CACHE_PREFIX + cacheKey);
     if(staleItem) return JSON.parse(staleItem).data;
 
@@ -150,9 +161,10 @@ export const getSmartAssistantAnalysis = async (
   targetRevenue: number
 ) => {
   const cacheKey = 'daily_motivation';
-  // Motivation updates every 4 hours roughly
   const cached = getFromCache(cacheKey, 4 * 60 * 60 * 1000); 
   if (cached) return cached;
+  
+  if (!API_KEY) return "Set API Key di Vercel untuk mengaktifkan asisten pintar.";
 
   try {
     const prompt = `
@@ -185,7 +197,8 @@ export const getFinancialConsultation = async (
   maintenanceFund: number,
   cleanProfit: number
 ) => {
-  // No cache for finance consultation as numbers change rapidly
+  if (!API_KEY) return "Fitur Konsultan butuh API Key.";
+
   try {
     const prompt = `
       Peran: Konsultan Keuangan Pribadi (Sonan) untuk Driver Ojek Online.
@@ -219,6 +232,17 @@ export const findGacorSpots = async (lat: number, lng: number): Promise<GacorSpo
   if (cached) {
       console.log("Using Cached Spots");
       return cached;
+  }
+
+  if (!API_KEY) {
+      return [{
+        name: "Mode Tanpa API Key",
+        type: "SYSTEM",
+        reason: "Mohon setting API Key di Vercel Settings.",
+        distance: "-",
+        priority: "SEDANG",
+        source: 'AI'
+      }];
   }
 
   const now = new Date();
@@ -263,7 +287,6 @@ export const findGacorSpots = async (lat: number, lng: number): Promise<GacorSpo
     return result;
   } catch (error) {
     console.error("Gacor Spot Error:", error);
-    // Fallback if API fails
     return [
       {
         name: "Pasar / Minimarket Terdekat",
@@ -281,6 +304,15 @@ export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENT
     const cacheKey = `strategy_${category}`;
     const cached = getFromCache(cacheKey, STRATEGY_TTL);
     if(cached) return cached;
+
+    if (!API_KEY) {
+        return [{
+            title: "Setup API Key",
+            content: "Untuk mendapatkan strategi jitu, Anda harus memasukkan API Key di pengaturan Vercel.",
+            category: category,
+            difficulty: "PEMULA"
+        }];
+    }
 
     try {
         const prompt = `
@@ -325,7 +357,8 @@ export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENT
 };
 
 export const getAnyepSolution = async (lat: number, lng: number) => {
-  // Anyep doctor is urgent and real-time, NO CACHE.
+  if (!API_KEY) return "Dokter Anyep sedang cuti (Cek API Key Vercel).";
+
   try {
     const now = new Date();
     const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
