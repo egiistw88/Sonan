@@ -35,7 +35,7 @@ const App: React.FC = () => {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // AI States (Motivation Only)
-  const [showMotivation, setShowMotivation] = useState(false); // Default false, trigger after load
+  const [showMotivation, setShowMotivation] = useState(false); 
   const [motivationMessage, setMotivationMessage] = useState('');
   const [motivationLoading, setMotivationLoading] = useState(true);
   
@@ -44,7 +44,7 @@ const App: React.FC = () => {
     locationName: 'Mencari Lokasi...',
     temp: '--',
     condition: '',
-    advice: 'Memuat data asisten...',
+    advice: 'Menghubungkan ke satelit...',
     loading: true
   });
 
@@ -69,7 +69,6 @@ const App: React.FC = () => {
       if (!isOnboardingDone) {
           setShowOnboarding(true);
       } else {
-          // Only show motivation if onboarding is already done
           setShowMotivation(true); 
       }
 
@@ -96,7 +95,6 @@ const App: React.FC = () => {
       localStorage.setItem(ONBOARDING_KEY, 'true');
       setShowOnboarding(false);
       
-      // Trigger motivation after onboarding
       setTimeout(() => setShowMotivation(true), 500);
       setToast({ msg: 'Profil Siap! Selamat Bekerja! 🚀', type: 'success' });
   };
@@ -121,10 +119,10 @@ const App: React.FC = () => {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TARGETS_KEY);
       localStorage.removeItem(ONBOARDING_KEY);
-      window.location.reload(); // Reload to trigger onboarding again
+      window.location.reload(); 
   };
 
-  // --- STATS CALCULATION (CORE LOGIC FIX) ---
+  // --- STATS CALCULATION ---
   const stats = useMemo(() => {
     const revenue = transactions
       .filter(t => t.type === TransactionType.INCOME)
@@ -136,27 +134,12 @@ const App: React.FC = () => {
 
     const orders = transactions.filter(t => t.isOrder).length;
     
-    // 1. Uang Real di Kantong
     const realCash = revenue - expenses; 
-
-    // 2. Estimasi Kewajiban (Hutang ke diri sendiri/Aplikasi)
-    // Saldo App ~15% dari pendapatan kotor (Estimasi aman)
     const appBalance = Math.floor(revenue * 0.15); 
-    
-    // Budget Ideal Bensin/Makan (20%) - Ini hanya indikator budget, bukan pengurang saldo
     const gasFundBudget = Math.floor(revenue * 0.20);      
-    
-    // Tabungan Service ~5% dari pendapatan kotor
     const serviceFund = Math.floor(revenue * 0.05);  
-    
-    // Cicilan Wajib (Fixed)
     const dailyInstallment = targets.dailyInstallment || 0;
-
-    // 3. Total Kewajiban yang harus disisihkan dari Uang Real
     const totalObligations = appBalance + serviceFund + dailyInstallment;
-    
-    // 4. Bersih = Uang Real - Kewajiban
-    // Jika expenses besar (misal beli bensin banyak), realCash turun, otomatis cleanProfit turun.
     const cleanProfit = realCash - totalObligations;
     
     return { 
@@ -164,7 +147,7 @@ const App: React.FC = () => {
       expenses, 
       orders, 
       realCash, 
-      gasFundBudget, // Renamed for clarity 
+      gasFundBudget, 
       appBalance, 
       serviceFund, 
       dailyInstallment,
@@ -179,12 +162,11 @@ const App: React.FC = () => {
 
   // --- AI: MOTIVATION ---
   useEffect(() => {
-    getWeatherLocation();
+    getWeatherLocation(); // Start GPS logic for weather
     
     if (showMotivation) {
         const initMotivation = async () => {
         setMotivationLoading(true);
-        // Only fetch if we don't have a message or it's a fresh start
         if (!motivationMessage) {
             const msg = await getSmartAssistantAnalysis(0, 0, targets.orders, targets.revenue);
             setMotivationMessage(msg);
@@ -195,7 +177,7 @@ const App: React.FC = () => {
     }
   }, [getWeatherLocation, targets, showMotivation]); 
 
-  // --- AI: WEATHER ---
+  // --- AI: WEATHER (Protected from GPS Failure) ---
   useEffect(() => {
     const updateWeather = async () => {
       if (weatherCoords) {
@@ -208,11 +190,21 @@ const App: React.FC = () => {
           loading: false
         });
       } else if (weatherError) {
-        setWeather(prev => ({ ...prev, loading: false, locationName: 'GPS Error', advice: 'Cek pengaturan lokasi.' }));
+        // Fallback jika GPS error: Jangan loading selamanya
+        setWeather(prev => ({ 
+            ...prev, 
+            loading: false, 
+            locationName: 'Lokasi Manual', 
+            advice: 'GPS tidak terdeteksi. Cek setelan HP.' 
+        }));
       }
     };
 
     if (weatherCoords) updateWeather();
+    if (weatherError) {
+        // Update state to stop spinner immediately
+        setWeather(prev => ({ ...prev, loading: false, locationName: 'GPS Mati', advice: 'Aktifkan GPS untuk info cuaca.' }));
+    }
   }, [weatherCoords, weatherError]);
 
   const handleAddTransaction = useCallback((amount: number, type: TransactionType, category: TransactionCategory, description: string, isOrder: boolean, coords?: { lat: number; lng: number }) => {
@@ -305,7 +297,7 @@ const App: React.FC = () => {
         {showAnyepDoctor && (
             <AnyepDoctor 
                 onClose={() => setShowAnyepDoctor(false)} 
-                userCoords={weatherCoords} // Pass the coords we already have
+                userCoords={weatherCoords}
             />
         )}
 

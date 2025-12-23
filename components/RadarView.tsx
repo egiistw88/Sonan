@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GacorSpot, Transaction, TransactionType } from '../types';
 import { findGacorSpots } from '../services/geminiService';
@@ -21,7 +22,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
-  const { coords, loading: gpsLoading, getLocation } = useGeolocation();
+  const { coords, loading: gpsLoading, error: gpsError, getLocation } = useGeolocation();
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'AI'>('HISTORY');
   
   const [aiSpots, setAiSpots] = useState<GacorSpot[]>([]);
@@ -30,17 +31,19 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const [scanning, setScanning] = useState(false);
   const [analyzingHistory, setAnalyzingHistory] = useState(false);
 
-  useEffect(() => {
-    if (coords && transactions.length > 0) {
-      analyzeHistory();
-    }
-  }, [coords, transactions]);
-
+  // Init GPS only once on mount
   useEffect(() => {
     if (!coords && !gpsLoading) {
         getLocation();
     }
   }, []);
+
+  // Update History Analysis when coords available
+  useEffect(() => {
+    if (coords && transactions.length > 0) {
+      analyzeHistory();
+    }
+  }, [coords, transactions]);
 
   const analyzeHistory = () => {
     setAnalyzingHistory(true);
@@ -51,6 +54,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         if (tx.type !== TransactionType.INCOME || !tx.coords) return false;
         const txDate = new Date(tx.timestamp);
         const txHour = txDate.getHours();
+        // Cari history 2 jam sebelum/sesudah jam sekarang
         return Math.abs(txHour - currentHour) <= 2;
     });
 
@@ -75,7 +79,8 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
     setHistorySpots(spots);
     setAnalyzingHistory(false);
     
-    if (spots.length === 0) {
+    // Jika history kosong, otomatis tawarkan AI
+    if (spots.length === 0 && !scanning) {
         setActiveTab('AI');
     }
   };
@@ -86,7 +91,9 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         return;
     }
     setScanning(true);
-    await new Promise(r => setTimeout(r, 1500));
+    // Simulasi delay biar berasa "mikir"
+    await new Promise(r => setTimeout(r, 1000));
+    
     const results = await findGacorSpots(coords.lat, coords.lng);
     setAiSpots(results);
     setScanning(false);
@@ -141,22 +148,34 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             <div className={`absolute w-1/2 h-1/2 border rounded-full opacity-60 ${activeTab === 'HISTORY' ? 'border-yellow-500' : 'border-cyan-500'}`}></div>
             
             {/* Scanning Sweeper */}
-            {(scanning || analyzingHistory) && (
+            {(scanning || analyzingHistory || gpsLoading) && (
                 <div className={`absolute w-full h-full rounded-full animate-spin-slow bg-gradient-to-t border-t-2 ${activeTab === 'HISTORY' ? 'from-yellow-500/10 border-yellow-400' : 'from-cyan-500/10 border-cyan-400'} to-transparent`}></div>
             )}
 
             {/* Center User Dot */}
             <div className="relative z-10 bg-slate-900 p-2 rounded-full border-4 border-slate-800 shadow-2xl">
-                 <div className={`w-4 h-4 rounded-full ${activeTab === 'HISTORY' ? 'bg-yellow-400' : 'bg-cyan-400'} shadow-[0_0_20px_currentColor]`}></div>
+                 <div className={`w-4 h-4 rounded-full ${activeTab === 'HISTORY' ? 'bg-yellow-400' : 'bg-cyan-400'} ${gpsLoading ? 'animate-bounce' : 'shadow-[0_0_20px_currentColor]'}`}></div>
             </div>
         </div>
 
         {/* Status Text / Button */}
         <div className="text-center mb-8 w-full px-6">
-            {!coords ? (
-                <div className="inline-flex items-center gap-2 bg-red-500/10 text-red-400 px-4 py-2 rounded-full border border-red-500/20 text-xs font-bold animate-pulse">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    Menunggu Sinyal GPS...
+            {gpsLoading ? (
+                 <p className="text-sm font-bold text-slate-400 animate-pulse">
+                    Mencari koordinat satelit...
+                </p>
+            ) : gpsError || !coords ? (
+                <div className="flex flex-col items-center gap-2">
+                    <div className="inline-flex items-center gap-2 bg-red-500/10 text-red-400 px-4 py-2 rounded-full border border-red-500/20 text-xs font-bold">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        {gpsError || "Lokasi belum terkunci"}
+                    </div>
+                    <button 
+                        onClick={getLocation}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold border border-slate-700 mt-2"
+                    >
+                        🔄 Coba Lagi
+                    </button>
                 </div>
             ) : activeTab === 'AI' && !scanning && aiSpots.length === 0 ? (
                 <button 

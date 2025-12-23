@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface Coords {
   lat: number;
@@ -19,15 +19,24 @@ export const useGeolocation = () => {
     error: null,
   });
 
+  // Ref untuk mencegah memory leak jika komponen unmount saat GPS masih mencari
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setState(prev => ({ ...prev, loading: false, error: 'GPS tidak didukung.' }));
+      setState(prev => ({ ...prev, loading: false, error: 'GPS tidak didukung di HP ini.' }));
       return;
     }
 
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     const successHandler = (position: GeolocationPosition) => {
+      if (!isMounted.current) return;
       setState({
         coords: {
           lat: position.coords.latitude,
@@ -38,44 +47,50 @@ export const useGeolocation = () => {
       });
     };
 
+    const handleLowAccuracy = () => {
+        console.log("Mencoba mode hemat daya (Low Accuracy)...");
+        navigator.geolocation.getCurrentPosition(
+            successHandler,
+            (finalError) => {
+                if (!isMounted.current) return;
+                let errorMsg = 'Gagal mendeteksi lokasi.';
+                if (finalError.code === finalError.PERMISSION_DENIED) errorMsg = "Izin lokasi ditolak. Cek pengaturan browser.";
+                else if (finalError.code === finalError.POSITION_UNAVAILABLE) errorMsg = "Sinyal GPS hilang/lemah.";
+                else if (finalError.code === finalError.TIMEOUT) errorMsg = "Waktu habis. Coba geser ke area terbuka.";
+                
+                setState({ coords: null, loading: false, error: errorMsg });
+            },
+            { 
+                enableHighAccuracy: false, 
+                timeout: 10000, 
+                maximumAge: 60000 // Boleh pakai cache 1 menit terakhir
+            }
+        );
+    };
+
     const errorHandler = (error: GeolocationPositionError) => {
-        // Fallback Logic:
-        // Error Code 3 = TIMEOUT, Code 2 = POSITION_UNAVAILABLE
-        // Jika High Accuracy gagal, coba Low Accuracy (lebih cepat, pakai tower seluler/wifi)
+        if (!isMounted.current) return;
+
+        // Jika error karena Timeout (3) atau Position Unavailable (2), coba Low Accuracy
         if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
-             console.log("High accuracy GPS failed, trying low accuracy fallback...");
-             navigator.geolocation.getCurrentPosition(
-                successHandler,
-                (finalError) => {
-                    let errorMsg = 'Gagal mengambil lokasi.';
-                    switch(finalError.code) {
-                        case finalError.PERMISSION_DENIED: errorMsg = "Izin GPS ditolak."; break;
-                        case finalError.POSITION_UNAVAILABLE: errorMsg = "Sinyal GPS hilang."; break;
-                        case finalError.TIMEOUT: errorMsg = "Waktu habis."; break;
-                    }
-                    setState(prev => ({ ...prev, loading: false, error: errorMsg }));
-                },
-                { 
-                    enableHighAccuracy: false, // Kunci fallback: matikan high accuracy
-                    timeout: 10000, 
-                    maximumAge: 60000 // Boleh pakai cache posisi 1 menit terakhir
-                }
-             );
+             handleLowAccuracy();
         } else {
-            // Permission denied atau error lain yang tidak bisa di-fallback
-            setState(prev => ({ ...prev, loading: false, error: "Izin GPS diperlukan." }));
+            // Permission Denied (1) atau error lain
+            let errorMsg = "Gagal mengambil lokasi.";
+            if (error.code === error.PERMISSION_DENIED) errorMsg = "Izin lokasi wajib diaktifkan.";
+            setState({ coords: null, loading: false, error: errorMsg });
         }
     };
 
-    // Attempt 1: High Accuracy (GPS Satellite)
-    // Timeout dipersingkat ke 5 detik agar user tidak menunggu lama sebelum fallback
+    // Percobaan Pertama: High Accuracy (Satelit)
+    // Timeout 7 detik. Jika lebih dari itu, anggap gagal dan lempar ke errorHandler (fallback)
     navigator.geolocation.getCurrentPosition(
       successHandler,
       errorHandler,
       { 
         enableHighAccuracy: true, 
-        timeout: 5000, 
-        maximumAge: 0 
+        timeout: 7000, 
+        maximumAge: 10000 
       }
     );
   }, []);
