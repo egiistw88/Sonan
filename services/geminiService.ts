@@ -2,16 +2,45 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { GacorSpot, StrategyTip } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safety check for API Key
+const API_KEY = process.env.API_KEY;
+if (!API_KEY) {
+  console.error("CRITICAL: API_KEY is missing in environment variables.");
+}
 
-// --- SIMPLE CACHE SYSTEM ---
-const CACHE_TTL = 15 * 60 * 1000; // 15 Menit untuk cuaca
-let weatherCache: { data: any; timestamp: number; key: string } | null = null;
-let motivationCache: string | null = null;
-// Cache untuk spot agar tidak spam API jika lokasi tidak berubah jauh
-let spotCache: { lat: number; lng: number; data: any; timestamp: number } | null = null;
-// Cache strategi agar tidak request berulang untuk kategori yang sama dalam sesi singkat
-const strategyCache: Record<string, StrategyTip[]> = {};
+// Inisialisasi dengan key (atau string kosong agar tidak crash saat init, error akan ditangkap saat call)
+const ai = new GoogleGenAI({ apiKey: API_KEY || "" });
+
+// --- PERSISTENT CACHE SYSTEM (localStorage) ---
+// Menggunakan localStorage agar data bertahan reload page / switch app
+const CACHE_PREFIX = 'sonan_cache_';
+// Cache durations
+const WEATHER_TTL = 20 * 60 * 1000; // 20 Menit
+const STRATEGY_TTL = 24 * 60 * 60 * 1000; // 24 Jam (Strategi jarang berubah)
+const SPOTS_TTL = 45 * 60 * 1000; // 45 Menit
+
+const getFromCache = (key: string, ttl: number) => {
+  try {
+    const item = localStorage.getItem(CACHE_PREFIX + key);
+    if (!item) return null;
+    const parsed = JSON.parse(item);
+    if (Date.now() - parsed.timestamp < ttl) {
+      return parsed.data;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const saveToCache = (key: string, data: any) => {
+  try {
+    const payload = { data, timestamp: Date.now() };
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(payload));
+  } catch (e) {
+    console.warn("Cache storage failed (Quota Exceeded?)", e);
+  }
+};
 
 // Schema Definition
 const weatherSchema: Schema = {
@@ -67,13 +96,12 @@ const strategySchema: Schema = {
 };
 
 export const fetchWeatherAndInsight = async (lat: number, lng: number) => {
-  // 1. Cek Cache (Hemat API Call)
-  const cacheKey = `${lat.toFixed(3)},${lng.toFixed(3)}`; 
-  if (weatherCache && 
-      weatherCache.key === cacheKey && 
-      (Date.now() - weatherCache.timestamp < CACHE_TTL)) {
-    console.log("Using Cached Weather Data");
-    return weatherCache.data;
+  // Round coordinates to 3 decimal places to group nearby caches (~100m radius)
+  const cacheKey = `weather_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+  const cached = getFromCache(cacheKey, WEATHER_TTL);
+  if (cached) {
+    console.log("Using Cached Weather");
+    return cached;
   }
 
   try {
@@ -94,24 +122,18 @@ export const fetchWeatherAndInsight = async (lat: number, lng: number) => {
     });
 
     const text = response.text;
-    if (!text) throw new Error("Empty response from AI");
+    if (!text) throw new Error("Empty response");
     
     const data = JSON.parse(text);
-    
-    // 2. Simpan ke Cache
-    weatherCache = {
-      data,
-      timestamp: Date.now(),
-      key: cacheKey
-    };
-
+    saveToCache(cacheKey, data);
     return data;
 
   } catch (error) {
     console.error("Gemini Weather Error:", error);
-    // Return cached data if available (even if expired) on error, otherwise fallback
-    if (weatherCache) return weatherCache.data;
-    
+    // Return stale cache if available (even if expired) rather than showing error
+    const staleItem = localStorage.getItem(CACHE_PREFIX + cacheKey);
+    if(staleItem) return JSON.parse(staleItem).data;
+
     return {
       location: "Lokasi Offline",
       temp: "--",
@@ -127,7 +149,10 @@ export const getSmartAssistantAnalysis = async (
   targetOrders: number, 
   targetRevenue: number
 ) => {
-  if (motivationCache) return motivationCache;
+  const cacheKey = 'daily_motivation';
+  // Motivation updates every 4 hours roughly
+  const cached = getFromCache(cacheKey, 4 * 60 * 60 * 1000); 
+  if (cached) return cached;
 
   try {
     const prompt = `
@@ -146,7 +171,7 @@ export const getSmartAssistantAnalysis = async (
     });
 
     const result = response.text || "Gas terus, rejeki gak akan lari!";
-    motivationCache = result;
+    saveToCache(cacheKey, result);
     return result;
   } catch (error) {
     return "Fokus jalan, rejeki sudah diatur!";
@@ -160,6 +185,7 @@ export const getFinancialConsultation = async (
   maintenanceFund: number,
   cleanProfit: number
 ) => {
+  // No cache for finance consultation as numbers change rapidly
   try {
     const prompt = `
       Peran: Konsultan Keuangan Pribadi (Sonan) untuk Driver Ojek Online.
@@ -183,21 +209,16 @@ export const getFinancialConsultation = async (
 
     return response.text || "Keuangan aman, tetap semangat!";
   } catch (error) {
-    console.error("Gemini Finance Error:", error);
     return "Dompet aman, gaspol terus!";
   }
 };
 
 export const findGacorSpots = async (lat: number, lng: number): Promise<GacorSpot[]> => {
-  if (spotCache) {
-    const dist = Math.sqrt(Math.pow(spotCache.lat - lat, 2) + Math.pow(spotCache.lng - lng, 2));
-    const isClose = dist < 0.005; // ~500m
-    const isFresh = (Date.now() - spotCache.timestamp) < (30 * 60 * 1000);
-    
-    if (isClose && isFresh) {
+  const cacheKey = `spots_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+  const cached = getFromCache(cacheKey, SPOTS_TTL);
+  if (cached) {
       console.log("Using Cached Spots");
-      return spotCache.data;
-    }
+      return cached;
   }
 
   const now = new Date();
@@ -238,23 +259,16 @@ export const findGacorSpots = async (lat: number, lng: number): Promise<GacorSpo
         source: 'AI'
     }));
     
-    // Update Cache
-    spotCache = {
-      lat,
-      lng,
-      data: result,
-      timestamp: Date.now()
-    };
-
+    saveToCache(cacheKey, result);
     return result;
   } catch (error) {
     console.error("Gacor Spot Error:", error);
-    // Fallback Static Data jika API Error
+    // Fallback if API fails
     return [
       {
         name: "Pasar / Minimarket Terdekat",
         type: "UMUM",
-        reason: "Spot alternatif saat sinyal sulit.",
+        reason: "Sinyal AI sedang gangguan, geser ke pusat keramaian manual.",
         distance: "Sekitar Sini",
         priority: "SEDANG",
         source: 'AI'
@@ -264,7 +278,9 @@ export const findGacorSpots = async (lat: number, lng: number): Promise<GacorSpo
 };
 
 export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENTAL'): Promise<StrategyTip[]> => {
-    if (strategyCache[category]) return strategyCache[category];
+    const cacheKey = `strategy_${category}`;
+    const cached = getFromCache(cacheKey, STRATEGY_TTL);
+    if(cached) return cached;
 
     try {
         const prompt = `
@@ -272,9 +288,9 @@ export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENT
             Tugas: Berikan 3 Tips & Trik SANGAT SPESIFIK untuk kategori: ${category}.
             
             Panduan Konten:
-            - Jika kategori TEKNIS: Bahas tentang PTO (Penolakan Tugas Otomatis), Filter Auto, Jarak Antar, atau Setting HP (Gunakan istilah aplikasi Maxim).
-            - Jika kategori MARKETING: Bahas "Personal Branding" driver, cara chat (script), penampilan, atau cara minta bintang 5 tanpa mengemis.
-            - Jika kategori MENTAL: Bahas manajemen emosi saat anyep, atau cara menghadapi customer rewel.
+            - Jika kategori TEKNIS: Bahas tentang PTO, Filter Auto, Jarak Antar, atau Setting HP.
+            - Jika kategori MARKETING: Bahas "Personal Branding", cara chat, penampilan, atau cara minta bintang 5.
+            - Jika kategori MENTAL: Bahas manajemen emosi saat anyep.
 
             Format: JSON only.
             Gaya Bahasa: Santai, tegas, to the point (Bahasa Driver Lapangan).
@@ -293,16 +309,14 @@ export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENT
         if(!text) return [];
 
         const result = JSON.parse(text).tips;
-        strategyCache[category] = result;
+        saveToCache(cacheKey, result);
         return result;
 
     } catch (error) {
-        console.error("Strategy AI Error", error);
-        // Fallback Content
         return [
             {
-                title: "Mode Offline / Fallback",
-                content: "Sinyal AI sedang gangguan. Tips umum: Selalu cek tekanan ban dan pastikan saldo driver cukup untuk terima orderan besar.",
+                title: "Mode Offline",
+                content: "Tidak dapat terhubung ke server strategi. Pastikan kuota internet aman.",
                 category: category,
                 difficulty: "PEMULA"
             }
@@ -311,6 +325,7 @@ export const getDriverStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENT
 };
 
 export const getAnyepSolution = async (lat: number, lng: number) => {
+  // Anyep doctor is urgent and real-time, NO CACHE.
   try {
     const now = new Date();
     const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -341,7 +356,6 @@ export const getAnyepSolution = async (lat: number, lng: number) => {
 
     return response.text || "Sinyal sepi. Coba geser ke minimarket terdekat untuk refresh titik GPS.";
   } catch (error) {
-    console.error("Dokter Anyep Error:", error);
     return "Gagal diagnosa. Geser ke area pasar atau jalan raya utama.";
   }
 };

@@ -34,20 +34,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
-  // Perhitungan Circular Progress
+  // --- SAFE MATH FOR PROGRESS BAR ---
   const radius = 80;
   const circumference = 2 * Math.PI * radius;
-  const progressPercent = Math.min((stats.orders / targets.orders) * 100, 100);
+  
+  // Prevent Division by Zero if targets are 0 or uninitialized
+  const safeTargetOrders = targets.orders > 0 ? targets.orders : 1;
+  const safeTargetRevenue = targets.revenue > 0 ? targets.revenue : 1;
+
+  const progressPercent = Math.min((stats.orders / safeTargetOrders) * 100, 100);
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
-  // Warna indikator berdasarkan progress
+  // Dynamic Color based on progress
   const getProgressColor = () => {
       if (progressPercent >= 100) return '#10b981'; // Emerald 500
       if (progressPercent >= 70) return '#f59e0b'; // Amber 500
       return '#ef4444'; // Red 500
   };
 
-  // Status Pulang
+  // Status Pulang Logic
   const isSafeHome = stats.cleanProfit > 0 && progressPercent >= 80;
 
   return (
@@ -156,7 +161,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-right">
                 <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Target Rupiah</p>
                 <p className="text-sm font-bold text-white">
-                    {Math.round((stats.revenue / targets.revenue) * 100)}% <span className="text-slate-500 text-xs">Tercapai</span>
+                    {Math.round((stats.revenue / safeTargetRevenue) * 100)}% <span className="text-slate-500 text-xs">Tercapai</span>
                 </p>
             </div>
         </div>
