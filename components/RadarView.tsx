@@ -58,9 +58,12 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
 
     const spots: GacorSpot[] = relevantTx.reverse().slice(0, 5).map(tx => {
         let distStr = 'Jauh';
+        let distVal = 9999; // Default distance value
+        
         if (coords && tx.coords) {
             const d = calculateDistance(coords.lat, coords.lng, tx.coords.lat, tx.coords.lng);
             distStr = d < 1 ? `${(d * 1000).toFixed(0)}m` : `${d.toFixed(1)}km`;
+            distVal = d;
         }
 
         return {
@@ -68,6 +71,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             type: 'LANGGANAN',
             reason: `Pernah dapat order jam segini`,
             distance: distStr,
+            distanceValue: distVal, // FIX: Property required by GacorSpot type
             coords: tx.coords,
             priority: 'TINGGI',
             source: 'HISTORY'
