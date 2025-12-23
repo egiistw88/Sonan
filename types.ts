@@ -10,10 +10,10 @@ export interface Transaction {
   id: string;
   amount: number;
   type: TransactionType;
-  category?: TransactionCategory; // New field
+  category?: TransactionCategory;
   description: string;
   timestamp: number;
-  isOrder: boolean; // True if it counts towards the 25 order target
+  isOrder: boolean; 
   coords?: {
     lat: number;
     lng: number;
@@ -31,11 +31,11 @@ export interface WeatherData {
 export interface DailyTargets {
   orders: number;
   revenue: number;
-  dailyInstallment: number; // New: Beban tetap harian (Cicilan Motor/HP)
+  dailyInstallment: number;
 }
 
 export const DEFAULT_TARGETS: DailyTargets = {
-  orders: 25,
+  orders: 20,
   revenue: 250000,
   dailyInstallment: 0
 };
@@ -44,10 +44,11 @@ export interface GacorSpot {
   name: string;
   type: string;
   reason: string;
-  distance: string; // Estimasi jarak string
-  coords?: { lat: number; lng: number }; // Koordinat presisi
-  priority: 'TINGGI' | 'SEDANG';
-  source: 'HISTORY' | 'AI'; // Pembeda sumber data
+  distance: string;
+  distanceValue: number; // Added for sorting logic
+  coords?: { lat: number; lng: number };
+  priority: 'TINGGI' | 'SEDANG' | 'RENDAH';
+  source: 'HISTORY' | 'AI';
 }
 
 export interface StrategyTip {
@@ -56,3 +57,12 @@ export interface StrategyTip {
   category: 'TEKNIS' | 'MARKETING' | 'MENTAL';
   difficulty: 'PEMULA' | 'SENIOR';
 }
+
+// NEW: Vehicle Health & Performance Types
+export interface VehicleHealth {
+  oilLife: number; // Persentase (100% - 0%)
+  tireCondition: number; // Persentase
+  nextServiceIn: number; // Estimasi trip lagi
+}
+
+export type PerformanceGrade = 'S' | 'A' | 'B' | 'C' | 'D';

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { getAnyepSolution } from '../services/geminiService';
+import { getAnyepDiagnosis } from '../services/smartService'; // NEW IMPORT
 import { useGeolocation } from '../hooks/useGeolocation';
 
 interface AnyepDoctorProps {
@@ -13,7 +13,6 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
   const [loading, setLoading] = useState(false);
   const [localCoords, setLocalCoords] = useState<{lat: number; lng: number} | null>(userCoords);
   
-  // Backup: If parent didn't pass coords, try to fetch locally once
   const { coords: hookCoords, getLocation } = useGeolocation();
 
   useEffect(() => {
@@ -28,14 +27,20 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
     }
   }, [hookCoords]);
 
-  // Use either prop coords (preferred) or hook coords
   const activeCoords = userCoords || localCoords;
 
   const handleDiagnose = async () => {
-    if (!activeCoords) return;
+    if (!activeCoords) {
+        // Fallback jika GPS mati: tetap berikan diagnosa umum berdasarkan waktu
+        setLoading(true);
+        const result = await getAnyepDiagnosis(0, 0); 
+        setDiagnosis(result);
+        setLoading(false);
+        return;
+    }
     
     setLoading(true);
-    const result = await getAnyepSolution(activeCoords.lat, activeCoords.lng);
+    const result = await getAnyepDiagnosis(activeCoords.lat, activeCoords.lng);
     setDiagnosis(result);
     setLoading(false);
   };
@@ -59,34 +64,15 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
                         </div>
                         <h3 className="text-white font-bold text-lg mb-2">Lagi Sepi Bosku?</h3>
                         <p className="text-slate-400 text-sm mb-6">
-                            Jangan diam saja. Biar AI analisa lokasi & jam sekarang untuk cari celah orderan.
+                            Sistem akan mengecek Jam & Hari ini dengan 'Buku Saku' untuk mencari celah orderan.
                         </p>
                         
-                        {!activeCoords && (
-                            <div className="mb-4 bg-yellow-500/10 border border-yellow-500/20 p-2 rounded-lg flex items-center justify-center gap-2 animate-pulse">
-                                <span className="text-yellow-500 text-xs font-bold">📡 Mencari Titik GPS...</span>
-                            </div>
-                        )}
-
                         <button 
                             onClick={handleDiagnose}
-                            disabled={loading || !activeCoords}
-                            className={`w-full font-black py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                                loading || !activeCoords 
-                                ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
-                                : 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/30 active:scale-95'
-                            }`}
+                            disabled={loading}
+                            className="w-full font-black py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white shadow-red-500/30 active:scale-95"
                         >
-                            {loading ? (
-                                <>
-                                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                    MENDIAGNOSA...
-                                </>
-                            ) : !activeCoords ? (
-                                "TUNGGU SINYAL GPS..."
-                            ) : (
-                                "MINTA RESEP GACOR"
-                            )}
+                            {loading ? "MENDIAGNOSA..." : "MINTA RESEP GACOR"}
                         </button>
                     </>
                 ) : (

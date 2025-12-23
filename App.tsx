@@ -11,7 +11,7 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { Toast } from './components/Toast';
 import { AnyepDoctor } from './components/AnyepDoctor';
 import { Transaction, TransactionType, TransactionCategory, WeatherData, DEFAULT_TARGETS, DailyTargets } from './types';
-import { fetchWeatherAndInsight, getSmartAssistantAnalysis } from './services/geminiService';
+import { getDailyMotivation } from './services/smartService'; // NEW IMPORT
 import { speakStats } from './services/audioService';
 import { useGeolocation } from './hooks/useGeolocation';
 
@@ -34,21 +34,20 @@ const App: React.FC = () => {
   // UX State
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // AI States (Motivation Only)
+  // Motivation State
   const [showMotivation, setShowMotivation] = useState(false); 
   const [motivationMessage, setMotivationMessage] = useState('');
-  const [motivationLoading, setMotivationLoading] = useState(true);
   
-  // Weather State
+  // Weather State (Now Static/Offline Friendly)
   const [weather, setWeather] = useState<WeatherData>({
-    locationName: 'Mencari Lokasi...',
-    temp: '--',
-    condition: '',
-    advice: 'Menghubungkan ke satelit...',
-    loading: true
+    locationName: 'Bandung',
+    temp: '24°C',
+    condition: 'Cerah Berawan',
+    advice: 'Siapkan jas hujan (Sedia payung sebelum hujan).',
+    loading: false
   });
 
-  const { coords: weatherCoords, error: weatherError, getLocation: getWeatherLocation } = useGeolocation();
+  const { coords: userCoords, getLocation: getGpsLocation } = useGeolocation();
 
   // --- PERSISTENCE & INIT ---
   useEffect(() => {
@@ -59,20 +58,20 @@ const App: React.FC = () => {
       const isOnboardingDone = localStorage.getItem(ONBOARDING_KEY);
       const todayStr = new Date().toDateString();
 
-      // Load Targets
       if (savedTargets) {
           const parsed = JSON.parse(savedTargets);
           setTargets({ ...DEFAULT_TARGETS, ...parsed });
       }
 
-      // Check Onboarding
       if (!isOnboardingDone) {
           setShowOnboarding(true);
       } else {
-          setShowMotivation(true); 
+          // OFFLINE MOTIVATION
+          const msg = getDailyMotivation();
+          setMotivationMessage(msg);
+          setShowMotivation(true);
       }
 
-      // Load Transactions & Reset Daily
       if (saved && lastDate === todayStr) {
         setTransactions(JSON.parse(saved));
       } else {
@@ -89,14 +88,22 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
   }, [transactions]);
 
+  // Init GPS on mount for distance calcs
+  useEffect(() => {
+      getGpsLocation();
+  }, []);
+
   const handleFinishOnboarding = (newTargets: DailyTargets) => {
       setTargets(newTargets);
       localStorage.setItem(TARGETS_KEY, JSON.stringify(newTargets));
       localStorage.setItem(ONBOARDING_KEY, 'true');
       setShowOnboarding(false);
       
+      const msg = getDailyMotivation();
+      setMotivationMessage(msg);
       setTimeout(() => setShowMotivation(true), 500);
-      setToast({ msg: 'Profil Siap! Selamat Bekerja! 🚀', type: 'success' });
+      
+      setToast({ msg: 'Profil Siap! Jangan lupa cek "SOP Pre-Flight" di dashboard!', type: 'success' });
   };
 
   const handleUpdateTargets = (newTargets: DailyTargets) => {
@@ -156,56 +163,9 @@ const App: React.FC = () => {
   }, [transactions, targets.dailyInstallment]);
 
   const handleVoiceReport = () => {
-      speakStats(stats.orders, targets.orders, stats.realCash, weather.advice);
+      speakStats(stats.orders, targets.orders, stats.realCash, "Semangat pejuang keluarga!");
       setToast({ msg: '🔊 Membacakan Laporan...', type: 'info' });
   };
-
-  // --- AI: MOTIVATION ---
-  useEffect(() => {
-    getWeatherLocation(); // Start GPS logic for weather
-    
-    if (showMotivation) {
-        const initMotivation = async () => {
-        setMotivationLoading(true);
-        if (!motivationMessage) {
-            const msg = await getSmartAssistantAnalysis(0, 0, targets.orders, targets.revenue);
-            setMotivationMessage(msg);
-        }
-        setMotivationLoading(false);
-        };
-        initMotivation();
-    }
-  }, [getWeatherLocation, targets, showMotivation]); 
-
-  // --- AI: WEATHER (Protected from GPS Failure) ---
-  useEffect(() => {
-    const updateWeather = async () => {
-      if (weatherCoords) {
-        const result = await fetchWeatherAndInsight(weatherCoords.lat, weatherCoords.lng);
-        setWeather({
-          locationName: result.location || "Lokasi",
-          temp: result.temp || "--",
-          condition: result.condition || "",
-          advice: result.advice || "Hati-hati di jalan.",
-          loading: false
-        });
-      } else if (weatherError) {
-        // Fallback jika GPS error: Jangan loading selamanya
-        setWeather(prev => ({ 
-            ...prev, 
-            loading: false, 
-            locationName: 'Lokasi Manual', 
-            advice: 'GPS tidak terdeteksi. Cek setelan HP.' 
-        }));
-      }
-    };
-
-    if (weatherCoords) updateWeather();
-    if (weatherError) {
-        // Update state to stop spinner immediately
-        setWeather(prev => ({ ...prev, loading: false, locationName: 'GPS Mati', advice: 'Aktifkan GPS untuk info cuaca.' }));
-    }
-  }, [weatherCoords, weatherError]);
 
   const handleAddTransaction = useCallback((amount: number, type: TransactionType, category: TransactionCategory, description: string, isOrder: boolean, coords?: { lat: number; lng: number }) => {
     const newTx: Transaction = {
@@ -235,7 +195,7 @@ const App: React.FC = () => {
         return (
           <DashboardView 
             weather={weather}
-            onRefreshWeather={getWeatherLocation}
+            onRefreshWeather={() => setToast({msg: "Cuaca offline (Statik)", type: "info"})}
             stats={stats}
             transactions={transactions}
             onDelete={handleDeleteTransaction}
@@ -289,7 +249,7 @@ const App: React.FC = () => {
         {showMotivation && !showOnboarding && (
             <DailyMotivation 
             message={motivationMessage} 
-            loading={motivationLoading}
+            loading={false}
             onClose={() => setShowMotivation(false)} 
             />
         )}
@@ -297,7 +257,7 @@ const App: React.FC = () => {
         {showAnyepDoctor && (
             <AnyepDoctor 
                 onClose={() => setShowAnyepDoctor(false)} 
-                userCoords={weatherCoords}
+                userCoords={userCoords}
             />
         )}
 
@@ -316,7 +276,6 @@ const App: React.FC = () => {
             onFabClick={() => setShowAddModal(true)} 
         />
       </div>
-      
     </div>
   );
 };

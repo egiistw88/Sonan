@@ -6,19 +6,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Tingkatkan limit warning menjadi 1000kb (1MB) agar tidak berisik
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        // CODE SPLITTING: Memisahkan library besar ke file terpisah
         manualChunks: {
-          vendor: ['react', 'react-dom'], // React dipisah
-          genai: ['@google/genai']        // SDK Google AI dipisah (karena cukup besar)
+          vendor: ['react', 'react-dom'],
         },
       },
     },
   },
-  // Optimasi server development
   server: {
     host: true,
   }

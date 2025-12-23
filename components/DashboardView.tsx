@@ -1,9 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Header } from './Header';
 import { TargetForm } from './TargetForm';
 import { SettingsModal } from './SettingsModal';
+import { PreFlightChecklist } from './PreFlightChecklist'; // NEW COMPONENT
 import { Transaction, TransactionType, WeatherData, DailyTargets } from '../types';
+import { calculatePerformanceGrade } from '../services/smartService';
 
 interface DashboardViewProps {
   weather: WeatherData;
@@ -33,27 +35,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showChecklist, setShowChecklist] = useState(false); // NEW STATE
 
-  // --- SAFE MATH FOR PROGRESS BAR ---
-  const radius = 80;
-  const circumference = 2 * Math.PI * radius;
-  
-  // Prevent Division by Zero if targets are 0 or uninitialized
+  // --- CALCS ---
   const safeTargetOrders = targets.orders > 0 ? targets.orders : 1;
-  const safeTargetRevenue = targets.revenue > 0 ? targets.revenue : 1;
-
   const progressPercent = Math.min((stats.orders / safeTargetOrders) * 100, 100);
-  const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
+  const grade = useMemo(() => calculatePerformanceGrade(stats.orders, targets.orders), [stats.orders, targets.orders]);
 
-  // Dynamic Color based on progress
-  const getProgressColor = () => {
-      if (progressPercent >= 100) return '#10b981'; // Emerald 500
-      if (progressPercent >= 70) return '#f59e0b'; // Amber 500
-      return '#ef4444'; // Red 500
-  };
-
-  // Status Pulang Logic
-  const isSafeHome = stats.cleanProfit > 0 && progressPercent >= 80;
+  // Grade Colors
+  const gradeColor = {
+      'S': 'text-purple-400 border-purple-500 shadow-purple-500/50',
+      'A': 'text-green-400 border-green-500 shadow-green-500/50',
+      'B': 'text-blue-400 border-blue-500 shadow-blue-500/50',
+      'C': 'text-yellow-400 border-yellow-500 shadow-yellow-500/50',
+      'D': 'text-red-400 border-red-500 shadow-red-500/50',
+  }[grade];
 
   return (
     <>
@@ -65,16 +61,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button 
                 onClick={onVoiceReport}
                 className="bg-slate-800/80 backdrop-blur text-cyan-400 p-2 rounded-xl border border-slate-700 shadow-lg active:scale-95 transition-all"
-                aria-label="Laporan Suara"
             >
                🔊
             </button>
              <button 
                 onClick={onOpenAnyepDoctor}
                 className="bg-slate-800/80 backdrop-blur text-red-500 p-2 rounded-xl border border-slate-700 shadow-lg active:scale-95 transition-all"
-                aria-label="Dokter Anyep"
             >
                🚑
+            </button>
+             {/* CHECKLIST BUTTON */}
+             <button 
+                onClick={() => setShowChecklist(true)}
+                className="bg-slate-800/80 backdrop-blur text-green-400 p-2 rounded-xl border border-slate-700 shadow-lg active:scale-95 transition-all"
+            >
+               ✅
             </button>
         </div>
         <div className="flex gap-2">
@@ -95,74 +96,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       <div className="p-4 pb-24 animate-fade-in flex flex-col items-center">
         
-        {/* COCKPIT SPEEDOMETER */}
-        <div className="relative w-64 h-64 flex items-center justify-center mb-6">
-            {/* Background Circle */}
-            <div className="absolute inset-0 rounded-full bg-slate-900 border-[8px] border-slate-800 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]"></div>
-            
-            {/* SVG Ring */}
-            <svg className="w-full h-full transform -rotate-90 absolute top-0 left-0 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]">
-                <circle
-                    cx="128"
-                    cy="128"
-                    r={radius}
-                    stroke="currentColor"
-                    strokeWidth="12"
-                    fill="transparent"
-                    className="text-slate-800"
-                />
-                <circle
-                    cx="128"
-                    cy="128"
-                    r={radius}
-                    stroke={getProgressColor()}
-                    strokeWidth="12"
-                    fill="transparent"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-1000 ease-out"
-                />
-            </svg>
+        {/* SCORECARD PANEL */}
+        <div className="w-full max-w-sm bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-xl relative overflow-hidden mb-6">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+                <span className="text-8xl font-black">
+                    {grade}
+                </span>
+            </div>
 
-            {/* Center Content */}
-            <div className="relative z-10 text-center flex flex-col items-center">
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Trip Selesai</p>
-                <div className="flex items-baseline gap-1">
-                    <span className="text-6xl font-black text-white leading-none tracking-tighter">
-                        {stats.orders}
-                    </span>
-                    <span className="text-xl text-slate-500 font-bold">/{targets.orders}</span>
+            <div className="flex justify-between items-end mb-6 relative z-10">
+                <div>
+                    <p className="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-1">Performa Hari Ini</p>
+                    <h2 className="text-3xl font-black text-white">
+                        {stats.orders} <span className="text-lg text-slate-500 font-bold">/ {targets.orders} Trip</span>
+                    </h2>
                 </div>
-                
-                {/* Secondary Stat: Money */}
-                <div className="mt-4 bg-slate-800/80 px-4 py-1.5 rounded-full border border-slate-700/50 flex items-center gap-2">
-                    <span className="text-green-500 font-bold text-sm">Rp</span>
-                    <span className="text-white font-bold text-lg tracking-tight">{(stats.revenue / 1000).toFixed(0)}rb</span>
+                <div className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center bg-slate-900 shadow-[0_0_20px_currentColor] ${gradeColor}`}>
+                    <span className="text-4xl font-black">{grade}</span>
                 </div>
             </div>
 
-            {/* Glowing Effects */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent to-white/5 pointer-events-none"></div>
-        </div>
-
-        {/* STATUS BAR: "BOLEH PULANG?" */}
-        <div className={`w-full max-w-sm mb-6 p-4 rounded-2xl border flex items-center justify-between transition-colors ${
-            isSafeHome 
-            ? 'bg-green-900/20 border-green-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]' 
-            : 'bg-slate-800/50 border-slate-700'
-        }`}>
-            <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Status Pulang</p>
-                <h3 className={`text-lg font-black ${isSafeHome ? 'text-green-400' : 'text-slate-300'}`}>
-                    {isSafeHome ? "AMAN PULANG! ✅" : "BELUM AMAN 🚧"}
-                </h3>
+            {/* Progress Bar */}
+            <div className="relative z-10">
+                <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="text-slate-300">Progress</span>
+                    <span className="text-green-400">{Math.round(progressPercent)}%</span>
+                </div>
+                <div className="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-700">
+                    <div 
+                        className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all duration-1000 ease-out relative"
+                        style={{ width: `${progressPercent}%` }}
+                    >
+                        <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                    </div>
+                </div>
             </div>
-            <div className="text-right">
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Target Rupiah</p>
-                <p className="text-sm font-bold text-white">
-                    {Math.round((stats.revenue / safeTargetRevenue) * 100)}% <span className="text-slate-500 text-xs">Tercapai</span>
-                </p>
+
+            {/* Financial Mini Stats */}
+            <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-700/50">
+                <div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Pendapatan</p>
+                    <p className="text-lg font-bold text-white">Rp {(stats.revenue/1000).toFixed(0)}rb</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">Bersih (Est)</p>
+                    <p className={`text-lg font-bold ${stats.cleanProfit > 0 ? 'text-green-400' : 'text-slate-400'}`}>
+                        Rp {(stats.cleanProfit/1000).toFixed(0)}rb
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -199,6 +180,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* MODALS */}
       {showTargetModal && (
         <TargetForm 
             currentTargets={targets}
@@ -215,6 +197,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onReset={onResetData}
             onClose={() => setShowSettingsModal(false)}
         />
+      )}
+
+      {showChecklist && (
+        <PreFlightChecklist onClose={() => setShowChecklist(false)} />
       )}
     </>
   );
