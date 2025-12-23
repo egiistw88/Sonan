@@ -18,6 +18,7 @@ export interface Transaction {
     lat: number;
     lng: number;
   };
+  deletedAt?: number | null; // Added for Soft Delete strategy
 }
 
 export interface WeatherData {
@@ -45,7 +46,7 @@ export interface GacorSpot {
   type: string;
   reason: string;
   distance: string;
-  distanceValue: number; // Added for sorting logic
+  distanceValue: number;
   coords?: { lat: number; lng: number };
   priority: 'TINGGI' | 'SEDANG' | 'RENDAH';
   source: 'HISTORY' | 'AI';
@@ -58,11 +59,10 @@ export interface StrategyTip {
   difficulty: 'PEMULA' | 'SENIOR';
 }
 
-// NEW: Vehicle Health & Performance Types
 export interface VehicleHealth {
-  oilLife: number; // Persentase (100% - 0%)
-  tireCondition: number; // Persentase
-  nextServiceIn: number; // Estimasi trip lagi
+  oilLife: number;
+  tireCondition: number;
+  nextServiceIn: number;
 }
 
 export type PerformanceGrade = 'S' | 'A' | 'B' | 'C' | 'D';

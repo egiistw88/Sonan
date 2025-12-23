@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -10,18 +11,10 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
-try {
-  root.render(
-    <React.StrictMode>
+root.render(
+  <React.StrictMode>
+    <ErrorBoundary>
       <App />
-    </React.StrictMode>
-  );
-} catch (error) {
-  console.error("Critical Application Error:", error);
-  root.render(
-    <div style={{ color: 'white', padding: 20, textAlign: 'center', backgroundColor: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-      <h1>Aplikasi Gagal Memuat</h1>
-      <p>Terjadi kesalahan teknis. Silakan refresh halaman.</p>
-    </div>
-  );
-}
+    </ErrorBoundary>
+  </React.StrictMode>
+);
