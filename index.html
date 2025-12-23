@@ -13,66 +13,36 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#020617">
     
-    <!-- App Icon / Favicon Configuration -->
+    <!-- App Icon / Favicon -->
     <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23facc15"/><path d="M50 15C35 15 23 27 23 42C23 57 50 85 50 85C50 85 77 57 77 42C77 27 65 15 50 15ZM50 55C42.8 55 37 49.2 37 49.2 37 42C37 34.8 42.8 29 50 29C57.2 29 63 34.8 63 42C63 49.2 57.2 55 50 55Z" fill="%23dc2626"/><circle cx="50" cy="42" r="10" fill="%23facc15"/></svg>' />
     <link rel="apple-touch-icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23facc15"/><path d="M50 15C35 15 23 27 23 42C23 57 50 85 50 85C50 85 77 57 77 42C77 27 65 15 50 15ZM50 55C42.8 55 37 49.2 37 49.2 37 42C37 34.8 42.8 29 50 29C57.2 29 63 34.8 63 42C63 49.2 57.2 55 50 55Z" fill="%23dc2626"/><circle cx="50" cy="42" r="10" fill="%23facc15"/></svg>' />
 
-    <!-- Tailwind Play CDN (Gunakan build process CSS asli untuk production yang lebih serius, tapi ini cukup untuk MVP) -->
+    <!-- Tailwind Play CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Custom scrollbar for sleek look */
-      ::-webkit-scrollbar {
-        width: 4px; /* Thinner */
-      }
-      ::-webkit-scrollbar-track {
-        background: #0f172a; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #334155; 
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #facc15;
-      }
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: #0f172a; }
+      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #facc15; }
       
       body {
-        background-color: #020617; /* Slate 950 - Deeper Black */
-        color: #f8fafc; /* Slate 50 */
+        background-color: #020617;
+        color: #f8fafc;
         -webkit-tap-highlight-color: transparent;
         font-family: system-ui, -apple-system, sans-serif;
-        overscroll-behavior: none; /* Prevent rubber banding */
-        /* Prevent text selection to feel like native app */
+        overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
       }
       
-      /* Allow selection on inputs */
-      input, textarea {
-        -webkit-user-select: text;
-        user-select: text;
-      }
+      input, textarea { -webkit-user-select: text; user-select: text; }
 
-      /* Animations */
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      @keyframes slideUp {
-        from { transform: translateY(20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
-      @keyframes slideDown {
-        from { transform: translate(-50%, -20px); opacity: 0; }
-        to { transform: translate(-50%, 0); opacity: 1; }
-      }
-      @keyframes pulseSlow {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-      }
-      @keyframes spinSlow {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideDown { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+      @keyframes pulseSlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+      @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       
       .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
       .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -80,44 +50,27 @@
       .animate-pulse-slow { animation: pulseSlow 3s infinite; }
       .animate-spin-slow { animation: spinSlow 3s linear infinite; }
 
-      /* Utilities */
       .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
       .pt-safe { padding-top: env(safe-area-inset-top); }
-      
-      .glass {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-      }
-      
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      
-      /* Gradient Masks for horizontal scroll */
-      .mask-gradient-right {
-        -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
-        mask-image: linear-gradient(to right, black 85%, transparent 100%);
-      }
+      .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- PENTING: Script ini menghubungkan HTML ke React. Tanpa ini, layar putih. -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

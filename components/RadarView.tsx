@@ -33,10 +33,11 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
 
   // Init GPS only once on mount
   useEffect(() => {
+    // Only call getLocation if we don't have coords and aren't currently loading
     if (!coords && !gpsLoading) {
         getLocation();
     }
-  }, []);
+  }, []); // Empty dependency array ensures this runs once on mount
 
   // Update History Analysis when coords available
   useEffect(() => {
@@ -46,6 +47,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   }, [coords, transactions]);
 
   const analyzeHistory = () => {
+    if (!coords) return; // Safety check
     setAnalyzingHistory(true);
     const now = new Date();
     const currentHour = now.getHours();
@@ -94,8 +96,12 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
     // Simulasi delay biar berasa "mikir"
     await new Promise(r => setTimeout(r, 1000));
     
-    const results = await findGacorSpots(coords.lat, coords.lng);
-    setAiSpots(results);
+    try {
+        const results = await findGacorSpots(coords.lat, coords.lng);
+        setAiSpots(results);
+    } catch (e) {
+        console.error("AI Scan failed", e);
+    }
     setScanning(false);
   };
 
