@@ -17,7 +17,9 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const [activeMode, setActiveMode] = useState<'AI' | 'HISTORY'>('AI');
   const [spots, setSpots] = useState<GacorSpot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<GacorSpot | null>(null);
-  const [isFollowing, setIsFollowing] = useState(true); // Auto-center map on user
+  
+  // STATE PENTING: Mengontrol apakah peta mengikuti user atau bebas digeser
+  const [isFollowing, setIsFollowing] = useState(true); 
   
   const mapRef = useRef<any>(null); 
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -27,26 +29,49 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const accuracyCircleRef = useRef<any>(null);
   const spotMarkersRef = useRef<any[]>([]); 
 
-  // 1. Initialize Map
+  // --- 1. Initialize Map (Hanya Sekali) ---
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Initialize map but don't set view yet (wait for GPS)
+    console.log("Initializing Map...");
+
+    // Initialize map 
     const map = L.map(mapContainerRef.current, {
         zoomControl: false,
-        attributionControl: false
-    }).setView([-6.9175, 107.6191], 12); // Default Bandung (will be overwritten instantly if GPS ready)
+        attributionControl: false,
+        zoomAnimation: true,
+        fadeAnimation: true,
+        markerZoomAnimation: true
+    }).setView([-6.9175, 107.6191], 13); // Default Bandung
 
-    // Dark Matter Tile Layer (High Contrast)
+    // Tile Layer: Dark Mode
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
+        maxZoom: 20,
         subdomains: 'abcd'
     }).addTo(map);
 
-    // Event listeners
-    map.on('dragstart', () => setIsFollowing(false)); // Disable auto-follow if user drags
+    // --- SOLUSI MAP DRIFTING/SULIT DIGUNAKAN ---
+    // Matikan auto-follow begitu user menyentuh peta untuk geser/zoom
+    const disableFollow = () => {
+        if (isFollowing) {
+            console.log("User interacted: Disabling Auto-Follow");
+            setIsFollowing(false);
+        }
+    };
+
+    map.on('dragstart', disableFollow);
+    map.on('zoomstart', disableFollow);
+    map.on('mousedown', disableFollow);
+    map.on('touchstart', disableFollow);
 
     mapRef.current = map;
+
+    // --- SOLUSI MAP BLANK ---
+    // Terkadang container belum siap render. Kita paksa update size setelah mount.
+    setTimeout(() => {
+        map.invalidateSize();
+        console.log("Map size invalidated (Fix Blank Screen)");
+    }, 200);
 
     // Start Real-time Tracking
     startWatching();
@@ -60,23 +85,35 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
     };
   }, []);
 
-  // 2. Handle User Location Updates (Real-time)
+  // --- 2. Handle User Location Updates (Real-time) ---
   useEffect(() => {
     if (!coords || !mapRef.current) return;
 
     const { lat, lng, accuracy, heading } = coords;
 
-    // A. Update User Marker
+    // A. Update Marker Posisi User (Selalu Update Marker, tidak peduli isFollowing)
     if (userMarkerRef.current) {
+        // Smoothly update marker position
         userMarkerRef.current.setLatLng([lat, lng]);
+        
+        // Update Heading/Direction Arrow if available
+        if (heading !== null && heading !== undefined) {
+            const iconElement = userMarkerRef.current.getElement();
+            if (iconElement) {
+                const arrow = iconElement.querySelector('.user-heading-arrow');
+                if (arrow) {
+                    arrow.style.transform = `rotate(${heading}deg) translateY(-10px)`;
+                }
+            }
+        }
     } else {
-        // Create custom pulsing marker
+        // Buat Marker User Baru
         const userIcon = L.divIcon({
             className: 'custom-user-marker',
             html: `<div class="relative w-8 h-8 flex items-center justify-center">
                       <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-50"></div>
                       <div class="absolute w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg z-10"></div>
-                      ${heading ? `<div class="absolute w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[12px] border-b-blue-400 transform" style="transform: rotate(${heading}deg) translateY(-10px);"></div>` : ''}
+                      <div class="user-heading-arrow absolute w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[12px] border-b-blue-400 transform transition-transform duration-300" style="transform: translateY(-10px);"></div>
                    </div>`,
             iconSize: [32, 32],
             iconAnchor: [16, 16]
@@ -92,28 +129,34 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         accuracyCircleRef.current = L.circle([lat, lng], {
             radius: accuracy || 50,
             fillColor: '#3b82f6',
-            fillOpacity: 0.15,
+            fillOpacity: 0.1,
             color: '#3b82f6',
-            opacity: 0.3,
+            opacity: 0.2,
             weight: 1
         }).addTo(mapRef.current);
     }
 
-    // C. Fly to user if "Following" mode is active
+    // C. Auto-Center (Logic Improved)
+    // Hanya gerakkan kamera jika isFollowing TRUE
     if (isFollowing) {
-        mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 1 });
+        // Gunakan panTo untuk pergerakan kecil, flyTo untuk pergerakan jauh (awal load)
+        // Ini mencegah efek "mabuk" jika GPS jitter sedikit
+        mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
 
   }, [coords, isFollowing]);
 
-  // 3. Fetch Spots when User Location or Mode changes
+  // --- 3. Fetch Spots Logic ---
   useEffect(() => {
+    // Fetch spots jika coords berubah signifikan atau mode berubah
+    // Debounce sedikit agar tidak spam function findSmartSpots
     if (coords) {
-        fetchSpots();
+        const timer = setTimeout(() => fetchSpots(), 500);
+        return () => clearTimeout(timer);
     }
   }, [coords?.lat, coords?.lng, activeMode]);
 
-  // 4. Render Spots
+  // --- 4. Render Spots ---
   useEffect(() => {
      renderSpotMarkers();
   }, [spots]);
@@ -137,7 +180,6 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             return Math.abs(txHour - currentHour) <= 3; 
           });
 
-          // Limit & Format
           results = relevantTx.slice(0, 15).map(tx => ({
               name: tx.description,
               type: 'LANGGANAN',
@@ -159,15 +201,15 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
       spotMarkersRef.current.forEach(m => mapRef.current.removeLayer(m));
       spotMarkersRef.current = [];
 
-      spots.forEach((spot, idx) => {
+      spots.forEach((spot) => {
           if (!spot.coords) return;
 
           const color = spot.source === 'HISTORY' ? 'text-yellow-400' : 'text-cyan-400';
           const isHighPriority = spot.priority === 'TINGGI';
           
           const iconHtml = `<div class="custom-marker-pin ${color} flex flex-col items-center group">
-                                <div class="relative">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 drop-shadow-xl transform transition-transform group-hover:-translate-y-2 ${isHighPriority ? 'scale-110' : ''}" viewBox="0 0 24 24" fill="currentColor">
+                                <div class="relative transition-transform duration-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 drop-shadow-xl transform group-hover:-translate-y-2 ${isHighPriority ? 'scale-110' : ''}" viewBox="0 0 24 24" fill="currentColor">
                                         <path fill-rule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
                                     </svg>
                                     ${isHighPriority ? '<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>' : ''}
@@ -189,7 +231,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             .on('click', () => {
                 triggerHaptic('light');
                 setSelectedSpot(spot);
-                setIsFollowing(false); // User clicked a spot, stop auto-following
+                setIsFollowing(false); // Stop following on click
                 mapRef.current.flyTo([spot.coords!.lat - 0.003, spot.coords!.lng], 15, { duration: 0.5 });
             });
           
@@ -205,15 +247,15 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
 
   const handleRecenter = () => {
       triggerHaptic('medium');
-      setIsFollowing(true);
+      setIsFollowing(true); // Re-enable following
       if (coords && mapRef.current) {
           mapRef.current.flyTo([coords.lat, coords.lng], 16, { duration: 1 });
       } else {
-          startWatching(); // Try starting GPS again if lost
+          startWatching(); 
       }
   };
 
-  // --- LOADING STATE (If no coords yet) ---
+  // --- LOADING STATE ---
   if (!coords && gpsLoading) {
       return (
           <div className="flex flex-col items-center justify-center h-[calc(100vh-84px)] bg-slate-950 text-slate-400">
@@ -229,27 +271,29 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
       return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-84px)] bg-slate-950 text-red-400 p-6 text-center">
             <span className="text-4xl mb-4">📡❌</span>
-            <h3 className="text-lg font-bold text-white mb-2">GPS Bermasalah</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Sinyal GPS Hilang</h3>
             <p className="text-sm mb-6">{gpsError}</p>
             <button 
                 onClick={() => window.location.reload()}
                 className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold"
             >
-                Coba Lagi
+                Muat Ulang Aplikasi
             </button>
         </div>
       );
   }
 
+  // --- RENDER UTAMA ---
   return (
     <div className="relative h-[calc(100vh-84px)] w-full bg-slate-950 overflow-hidden">
         
-        {/* Map Container */}
-        <div ref={mapContainerRef} className="absolute inset-0 z-0"></div>
+        {/* Map Container - Pastikan W-full H-full */}
+        <div ref={mapContainerRef} className="absolute inset-0 z-0 h-full w-full bg-slate-900"></div>
 
         {/* Overlay: Top Controls */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-safe z-10 pointer-events-none">
             <div className="flex justify-between items-start">
+                {/* Switcher Mode */}
                 <div className="bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700 shadow-xl pointer-events-auto flex gap-1">
                     <button 
                         onClick={() => { triggerHaptic('light'); setActiveMode('AI'); setSelectedSpot(null); }}
@@ -266,7 +310,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
                 </div>
 
                 <div className="flex flex-col gap-2 pointer-events-auto">
-                    {/* Recenter Button */}
+                    {/* Recenter / Lock Button */}
                     <button 
                         onClick={handleRecenter}
                         className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-xl transition-all active:scale-95 ${
@@ -275,19 +319,33 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
                             : 'bg-slate-900/90 border-slate-700 text-slate-400 hover:text-white'
                         }`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                        </svg>
+                        {isFollowing ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 animate-pulse" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                            </svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                        )}
                     </button>
                 </div>
             </div>
         </div>
 
-        {/* Overlay: Accuracy Info */}
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-0 pointer-events-none opacity-50">
+        {/* Overlay: Status Info */}
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-0 pointer-events-none w-full px-12 flex flex-col items-center">
+             {!isFollowing && (
+                 <div className="bg-slate-900/80 backdrop-blur px-4 py-2 rounded-full border border-slate-700 mb-2 animate-fade-in">
+                     <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-widest">
+                         Mode Bebas (Auto-Follow Mati)
+                     </p>
+                 </div>
+             )}
              {coords?.accuracy && (
-                 <p className="text-[10px] text-slate-400 bg-black/50 px-2 py-1 rounded-full backdrop-blur">
-                     Akurasi GPS: +/- {Math.round(coords.accuracy)}m
+                 <p className="text-[9px] text-slate-500 bg-black/40 px-2 py-1 rounded-lg backdrop-blur">
+                     Akurasi: +/- {Math.round(coords.accuracy)}m
                  </p>
              )}
         </div>

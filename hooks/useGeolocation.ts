@@ -33,7 +33,7 @@ export const useGeolocation = () => {
     };
   }, []);
 
-  // Mode 1: Single Shot (Hemat Baterai - untuk Dashboard/Input)
+  // Mode 1: Single Shot (Untuk input transaksi / dashboard)
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setState(prev => ({ ...prev, loading: false, error: 'GPS tidak didukung.' }));
@@ -57,17 +57,22 @@ export const useGeolocation = () => {
       },
       (err) => {
         if (!isMounted.current) return;
-        setState({ coords: null, loading: false, error: getErrorMsg(err) });
+        console.warn("GPS Single Shot Error:", err);
+        setState(prev => ({ ...prev, loading: false, error: getErrorMsg(err) }));
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { 
+        enableHighAccuracy: true, // Paksa hardware GPS
+        timeout: 15000,           // Waktu tunggu lebih lama (15s) agar lock lebih akurat
+        maximumAge: 10000         // Boleh pakai cache maks 10 detik lalu
+      }
     );
   }, []);
 
-  // Mode 2: Real-time Watch (Boros Baterai - untuk Radar/Navigasi)
+  // Mode 2: Real-time Watch (Untuk Radar/Navigasi)
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) return;
     
-    // Clear previous watch if any
+    // Clear previous watch if any to prevent duplicates
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
 
     setState(prev => ({ ...prev, loading: true, error: null }));
@@ -75,6 +80,10 @@ export const useGeolocation = () => {
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         if (!isMounted.current) return;
+        
+        // Filter out bad accuracy data (optional, but good for radar)
+        // if (pos.coords.accuracy > 100) return; 
+
         setState({
           coords: {
             lat: pos.coords.latitude,
@@ -89,13 +98,15 @@ export const useGeolocation = () => {
       },
       (err) => {
         if (!isMounted.current) return;
-        // Don't clear state on minor errors during watch, just log/update error
         console.warn("GPS Watch Error:", err);
+        // Jangan hapus state coords lama jika error transient (misal masuk terowongan)
+        // Hanya set error message
+        setState(prev => ({ ...prev, loading: false, error: getErrorMsg(err) }));
       },
       { 
-        enableHighAccuracy: true, // Wajib ON untuk Radar
-        timeout: 10000, 
-        maximumAge: 0 
+        enableHighAccuracy: true, 
+        timeout: 20000, 
+        maximumAge: 0 // Selalu minta data fresh
       }
     );
   }, []);
@@ -109,9 +120,9 @@ export const useGeolocation = () => {
 
   const getErrorMsg = (err: GeolocationPositionError) => {
       switch(err.code) {
-          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Aktifkan di pengaturan.";
-          case err.POSITION_UNAVAILABLE: return "Sinyal GPS hilang.";
-          case err.TIMEOUT: return "Waktu habis mencari satelit.";
+          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Cek pengaturan browser/HP.";
+          case err.POSITION_UNAVAILABLE: return "Sinyal GPS lemah/hilang. Coba pindah ke area terbuka.";
+          case err.TIMEOUT: return "Waktu habis mencari satelit. Pastikan GPS aktif.";
           default: return "Gagal mengambil lokasi.";
       }
   };
