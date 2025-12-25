@@ -23,43 +23,37 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const accuracyCircleRef = useRef<any>(null);
   const spotMarkersRef = useRef<any[]>([]); 
 
-  // --- 1. Initialize Map (Hanya Sekali) ---
+  // --- 1. Initialize Map (IMMEDIATELY - Jangan Tunggu GPS) ---
   useEffect(() => {
-    // Safety check for map container
     if (!mapContainerRef.current) return;
-    // Prevent double initialization
     if (mapRef.current) return;
     
-    // Check if Leaflet is loaded
     const L = (window as any).L;
     if (!L) {
         console.error("Leaflet not loaded");
         return;
     }
 
-    console.log("Initializing Map...");
+    console.log("Initializing Map (Default View)...");
 
     try {
+        // Default View: Bandung (Bisa diganti Jakarta/Surabaya dsb)
+        // Map akan langsung muncul, tidak blank
         const map = L.map(mapContainerRef.current, {
             zoomControl: false,
             attributionControl: false,
             zoomAnimation: true,
             fadeAnimation: true,
             markerZoomAnimation: true
-        }).setView([-6.9175, 107.6191], 13); // Default Bandung
+        }).setView([-6.9175, 107.6191], 13); 
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             maxZoom: 20,
             subdomains: 'abcd'
         }).addTo(map);
 
-        // Interaction Handlers to disable auto-follow
+        // Interaction Handlers
         const disableFollow = () => {
-             // We use a ref-like check or state setter wrapper to avoid stale closure if needed, 
-             // but here just setting state is fine as it triggers re-render 
-             // and the effect dealing with isFollowing will pick it up.
-             // However, inside this callback `isFollowing` might be stale.
-             // It's better to just set it to false without checking.
              setIsFollowing(false);
         };
 
@@ -78,7 +72,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         console.error("Map Init Error:", e);
     }
 
-    // Start GPS
+    // Start GPS in background
     startWatching();
 
     return () => {
@@ -88,9 +82,9 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             mapRef.current = null;
         }
     };
-  }, []); // Empty dependency array = runs once on mount
+  }, []); 
 
-  // --- 2. Handle Updates ---
+  // --- 2. Handle GPS Updates ---
   useEffect(() => {
     const L = (window as any).L;
     if (!coords || !mapRef.current || !L) return;
@@ -140,14 +134,14 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         }).addTo(mapRef.current);
     }
 
-    // Auto-Center logic
+    // Auto-Center logic (Only if first load OR following enabled)
     if (isFollowing) {
         mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
 
   }, [coords, isFollowing]);
 
-  // --- 3. Fetch & Render Spots ---
+  // --- 3. Fetch Spots ---
   useEffect(() => {
     if (coords) {
         const timer = setTimeout(() => fetchSpots(), 500);
@@ -246,6 +240,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
       if (coords && mapRef.current) {
           mapRef.current.flyTo([coords.lat, coords.lng], 16, { duration: 1 });
       } else {
+          // Retry GPS
           startWatching(); 
       }
   };
@@ -253,32 +248,28 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   return (
     <div className="relative h-[calc(100vh-84px)] w-full bg-slate-950 overflow-hidden">
         
-        {/* MAP CONTAINER (ALWAYS RENDERED) */}
+        {/* MAP CONTAINER (ALWAYS VISIBLE) */}
         <div ref={mapContainerRef} className="absolute inset-0 z-0 h-full w-full bg-slate-900"></div>
 
-        {/* --- LOADING OVERLAY --- */}
-        {(!coords && gpsLoading) && (
-             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm text-slate-400">
-                <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-sm font-bold animate-pulse">Mencari Koordinat Satelit...</p>
-                <p className="text-xs text-slate-600 mt-2">Pastikan GPS Aktif & Berada di Luar Ruangan</p>
-             </div>
-        )}
-
-        {/* --- ERROR OVERLAY --- */}
-        {(!coords && gpsError) && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur text-red-400 p-6 text-center">
-                <span className="text-4xl mb-4">📡❌</span>
-                <h3 className="text-lg font-bold text-white mb-2">Sinyal GPS Hilang</h3>
-                <p className="text-sm mb-6">{gpsError}</p>
-                <button 
-                    onClick={() => window.location.reload()}
-                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold"
-                >
-                    Muat Ulang Aplikasi
-                </button>
-            </div>
-        )}
+        {/* --- FLOATING STATUS INDICATOR (Non-Blocking) --- */}
+        {/* Ini menggantikan layar loading yang memblokir */}
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center gap-2 w-full px-4">
+             {(!coords && gpsLoading) && (
+                 <div className="bg-slate-900/90 backdrop-blur border border-slate-700 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl animate-fade-in">
+                     <div className="w-3 h-3 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                     <span className="text-xs font-bold text-slate-300">Mencari Sinyal GPS...</span>
+                 </div>
+             )}
+             
+             {(!coords && gpsError) && (
+                 <div className="bg-red-900/90 backdrop-blur border border-red-500 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl animate-bounce pointer-events-auto">
+                     <span className="text-white font-bold">⚠️ {gpsError}</span>
+                     <button onClick={() => window.location.reload()} className="bg-red-600 px-2 py-0.5 rounded text-[10px] text-white font-bold">
+                        RETRY
+                     </button>
+                 </div>
+             )}
+        </div>
 
         {/* Overlay: Top Controls */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-safe z-10 pointer-events-none">

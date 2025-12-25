@@ -33,7 +33,7 @@ export const useGeolocation = () => {
     };
   }, []);
 
-  // Mode 1: Single Shot (Untuk input transaksi / dashboard)
+  // Mode 1: Single Shot
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setState(prev => ({ ...prev, loading: false, error: 'GPS tidak didukung.' }));
@@ -61,29 +61,32 @@ export const useGeolocation = () => {
         setState(prev => ({ ...prev, loading: false, error: getErrorMsg(err) }));
       },
       { 
-        enableHighAccuracy: true, // Paksa hardware GPS
-        timeout: 15000,           // Waktu tunggu lebih lama (15s) agar lock lebih akurat
-        maximumAge: 10000         // Boleh pakai cache maks 10 detik lalu
+        enableHighAccuracy: true, 
+        timeout: 10000,           
+        maximumAge: 60000 // Terima data lokasi hingga 1 menit yang lalu (Agar instan)
       }
     );
   }, []);
 
-  // Mode 2: Real-time Watch (Untuk Radar/Navigasi)
+  // Mode 2: Real-time Watch
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) return;
     
-    // Clear previous watch if any to prevent duplicates
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
 
     setState(prev => ({ ...prev, loading: true, error: null }));
+
+    // Opsi GPS: Terima cache (biar cepat muncul), timeout 15 detik
+    const options = { 
+      enableHighAccuracy: true, 
+      timeout: 15000, 
+      maximumAge: 30000 // Boleh pakai lokasi 30 detik lalu saat inisialisasi
+    };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         if (!isMounted.current) return;
         
-        // Filter out bad accuracy data (optional, but good for radar)
-        // if (pos.coords.accuracy > 100) return; 
-
         setState({
           coords: {
             lat: pos.coords.latitude,
@@ -92,22 +95,23 @@ export const useGeolocation = () => {
             heading: pos.coords.heading,
             speed: pos.coords.speed
           },
-          loading: false,
+          loading: false, // Stop loading as soon as we get ANY data
           error: null,
         });
       },
       (err) => {
         if (!isMounted.current) return;
         console.warn("GPS Watch Error:", err);
-        // Jangan hapus state coords lama jika error transient (misal masuk terowongan)
-        // Hanya set error message
-        setState(prev => ({ ...prev, loading: false, error: getErrorMsg(err) }));
+        
+        // Jika error Timeout, jangan hapus state lama, biarkan user melihat peta
+        // Hanya update error message
+        setState(prev => ({ 
+            ...prev, 
+            loading: false, 
+            error: getErrorMsg(err) 
+        }));
       },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 20000, 
-        maximumAge: 0 // Selalu minta data fresh
-      }
+      options
     );
   }, []);
 
@@ -120,9 +124,9 @@ export const useGeolocation = () => {
 
   const getErrorMsg = (err: GeolocationPositionError) => {
       switch(err.code) {
-          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Cek pengaturan browser/HP.";
-          case err.POSITION_UNAVAILABLE: return "Sinyal GPS lemah/hilang. Coba pindah ke area terbuka.";
-          case err.TIMEOUT: return "Waktu habis mencari satelit. Pastikan GPS aktif.";
+          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Cek pengaturan HP.";
+          case err.POSITION_UNAVAILABLE: return "Sinyal GPS hilang. Pindah ke area terbuka.";
+          case err.TIMEOUT: return "Koneksi GPS lambat (Timeout).";
           default: return "Gagal mengambil lokasi.";
       }
   };
