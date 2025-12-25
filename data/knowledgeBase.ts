@@ -1,67 +1,241 @@
 
-import { GacorSpot, StrategyTip } from "../types";
+import { StrategyTip } from "../types";
 
-interface LocationData {
+export interface LocationData {
   lat: number;
   lng: number;
   name: string;
   type: string;
-  tags: string[]; // TIMUR, BARAT, PUSAT, UTARA, SELATAN
-  bestHours: number[]; // Jam-jam gacor (misal [6, 7, 16, 17])
+  zone: string;
+  notes: string; // Catatan asli lapangan
+  bestHours: number[]; // Jam prediksi (Window +/- 1 jam)
+  specificDays?: number[]; // 0=Minggu, 1=Senin, dst. Jika undefined = Setiap Hari.
 }
 
-// DATABASE LENGKAP BANDUNG 2025
+// DATABASE POWERFULL BERDASARKAN DATA REAL/PREDIKSI 2025
 export const LOCATIONS_DB: LocationData[] = [
-  // --- ZONA 1: TIMUR (HUNI & INDUSTRI) ---
-  { lat: -6.9261, lng: 107.7176, name: "Bundaran Cibiru / UIN", type: "MAHASISWA", tags: ["TIMUR"], bestHours: [5, 6, 7, 16, 17] },
-  { lat: -6.9135, lng: 107.6625, name: "Terminal Antapani", type: "PERUMAHAN", tags: ["TIMUR"], bestHours: [5, 6, 7] },
-  { lat: -6.9234, lng: 107.6756, name: "Arcamanik Sport Center", type: "PERUMAHAN", tags: ["TIMUR"], bestHours: [6, 7, 16] },
-  { lat: -6.9459, lng: 107.7032, name: "Masjid Al-Jabbar", type: "WISATA", tags: ["TIMUR"], bestHours: [15, 16, 17, 18] }, // Weekend heavy
-  { lat: -6.9317, lng: 107.7735, name: "Unpad Jatinangor (Gerbang Lama)", type: "KAMPUS", tags: ["TIMUR"], bestHours: [7, 8, 16, 17] },
-  { lat: -6.9380, lng: 107.7280, name: "Pabrik Kahatex (Rancaekek)", type: "INDUSTRI", tags: ["TIMUR"], bestHours: [14, 15, 22, 23] },
-  { lat: -6.9583, lng: 107.6890, name: "Summarecon Bandung", type: "MALL", tags: ["TIMUR"], bestHours: [11, 12, 18, 19] },
+  // --- KAMIS ---
+  { 
+    lat: -6.9205, lng: 107.6200, 
+    name: "Toko Tiga Jl. Jendral Ahmad Yani", 
+    type: "COMMERCIAL", zone: "Pusat Kota - Kosambi", 
+    notes: "Area pertokoan ramai sore hari saat tutup toko/pulang kerja.", 
+    bestHours: [16, 17], specificDays: [4] 
+  },
+  { 
+    lat: -6.9080, lng: 107.6250, 
+    name: "Doublesteak Bengawan (Cihapit)", 
+    type: "CULINARY", zone: "Riau - Cihapit", 
+    notes: "Spot kuliner, potensi orderan food tinggi saat jam makan siang.", 
+    bestHours: [12, 13], specificDays: [4] 
+  },
+  { 
+    lat: -6.9380, lng: 107.6450, 
+    name: "RSJP Paramarta Soekarno Hatta", 
+    type: "HEALTH", zone: "Soekarno Hatta - Binong", 
+    notes: "Rumah sakit/perkantoran, ramai kunjungan pagi.", 
+    bestHours: [8, 9, 10], specificDays: [4] 
+  },
+  { 
+    lat: -6.9320, lng: 107.6300, 
+    name: "Gerai Tiki 084 Martanegara", 
+    type: "LOGISTICS", zone: "Turangga - Martanegara", 
+    notes: "Logistik/Ekspedisi biasanya ramai pengiriman siang hari.", 
+    bestHours: [13, 14, 15], specificDays: [4] 
+  },
+  { 
+    lat: -6.9250, lng: 107.6550, 
+    name: "Jl. Cidurian Utara (Sukapura)", 
+    type: "RESIDENTIAL", zone: "Kiaracondong - Sukapura", 
+    notes: "Area padat penduduk, orderan berangkat kerja/sekolah.", 
+    bestHours: [7, 8], specificDays: [4] 
+  },
+  { 
+    lat: -6.8955, lng: 107.6610, 
+    name: "Gudang Kopi Jatihandap Timur", 
+    type: "HANGOUT", zone: "Jatihandap", 
+    notes: "Spot santai sore atau ambil kendaraan setelah cuci.", 
+    bestHours: [16, 17, 18], specificDays: [4] 
+  },
+  { 
+    lat: -6.9350, lng: 107.5750, 
+    name: "Cahaya Plastik Ps. Induk Caringin", 
+    type: "MARKET", zone: "Caringin", 
+    notes: "Pasar Induk Caringin adalah hotspot Dini Hari.", 
+    bestHours: [2, 3, 4, 5], specificDays: [4] 
+  },
+  { 
+    lat: -6.9650, lng: 107.5900, 
+    name: "PT. Tirta Makmur (Kavling Manglid)", 
+    type: "INDUSTRIAL", zone: "Margahayu", 
+    notes: "Kawasan pabrik/PT, hotspot jemput karyawan pulang kerja.", 
+    bestHours: [16, 17, 18], specificDays: [4] 
+  },
+  { 
+    lat: -6.9200, lng: 107.7150, 
+    name: "Mie Gacoan Cibiru", 
+    type: "CULINARY", zone: "Cibiru", 
+    notes: "Spot antrian panjang, sangat ramai saat makan siang.", 
+    bestHours: [11, 12, 13], specificDays: [4] 
+  },
 
-  // --- ZONA 2: TENGAH (KANTOR & BISNIS) ---
-  { lat: -6.9210, lng: 107.6106, name: "Asia Afrika / Alun-alun", type: "WISATA", tags: ["PUSAT"], bestHours: [9, 10, 16, 17, 18, 19] },
-  { lat: -6.9247, lng: 107.6152, name: "Lengkong Kecil (Kuliner)", type: "KULINER", tags: ["PUSAT"], bestHours: [18, 19, 20, 21, 22] },
-  { lat: -6.9140, lng: 107.6101, name: "Balai Kota / BEC", type: "KANTOR", tags: ["PUSAT"], bestHours: [8, 9, 16, 17] },
-  { lat: -6.9126, lng: 107.6024, name: "Stasiun Bandung (Pintu Selatan)", type: "STASIUN", tags: ["PUSAT"], bestHours: [8, 9, 15, 18, 19] },
-  { lat: -6.9172, lng: 107.6187, name: "Jalan Riau (FO & Cafe)", type: "WISATA", tags: ["PUSAT"], bestHours: [11, 12, 13, 19, 20] },
-  { lat: -6.9205, lng: 107.6335, name: "Trans Studio Mall (TSM)", type: "MALL", tags: ["PUSAT"], bestHours: [12, 13, 20, 21] },
+  // --- RABU ---
+  { 
+    lat: -6.9220, lng: 107.5980, 
+    name: "Jl. Cibadak (Kuliner Malam)", 
+    type: "CULINARY NIGHT", zone: "Pusat Kota - Cibadak", 
+    notes: "Cibadak adalah pusat kuliner malam (Street Food) Bandung.", 
+    bestHours: [19, 20, 21], specificDays: [3] 
+  },
+  { 
+    lat: -6.9350, lng: 107.5750, 
+    name: "Serunai Collection Caringin", 
+    type: "COMMERCIAL", zone: "Caringin - Holis", 
+    notes: "Area tekstil/gudang, aktif jam kerja.", 
+    bestHours: [12, 13, 14], specificDays: [3] 
+  },
+  { 
+    lat: -6.9320, lng: 107.6800, 
+    name: "Apotek Al Fattah 2 Cingised", 
+    type: "HEALTH", zone: "Cisaranten - Cingised", 
+    notes: "Pembelian obat sering terjadi di malam hari.", 
+    bestHours: [19, 20, 21], specificDays: [3] 
+  },
+  { 
+    lat: -6.9200, lng: 107.6400, 
+    name: "Toko Megaria Plastik (Stasiun)", 
+    type: "COMMERCIAL", zone: "Stasiun Kiaracondong", 
+    notes: "Area stasiun sangat sibuk di jam keberangkatan pagi.", 
+    bestHours: [7, 8], specificDays: [3] 
+  },
 
-  // --- ZONA 3: UTARA (PENDIDIKAN & ELIT) ---
-  { lat: -6.8927, lng: 107.6171, name: "Dipatiukur (Unpad/ITHB)", type: "KAMPUS", tags: ["UTARA"], bestHours: [8, 9, 12, 13, 17, 18] },
-  { lat: -6.8915, lng: 107.6107, name: "Gerbang Depan ITB", type: "KAMPUS", tags: ["UTARA"], bestHours: [8, 16, 17] },
-  { lat: -6.8922, lng: 107.5959, name: "PVJ Mall", type: "MALL", tags: ["UTARA"], bestHours: [12, 13, 19, 20, 21] },
-  { lat: -6.8624, lng: 107.5936, name: "Setiabudi (Arah Lembang)", type: "WISATA", tags: ["UTARA"], bestHours: [9, 10, 15, 16] },
-  { lat: -6.8865, lng: 107.5810, name: "Universitas Maranatha", type: "KAMPUS", tags: ["UTARA"], bestHours: [8, 15, 16] },
-  { lat: -6.9034, lng: 107.6056, name: "Cihampelas Walk (Ciwalk)", type: "MALL", tags: ["UTARA"], bestHours: [12, 19, 20] },
-  { lat: -6.8800, lng: 107.6145, name: "Dago Simpang", type: "FOOD", tags: ["UTARA"], bestHours: [11, 12, 18, 19] },
+  // --- SELASA ---
+  { 
+    lat: -6.9020, lng: 107.6520, 
+    name: "UPT Puskesmas Padasuka", 
+    type: "HEALTH", zone: "Cicaheum - Padasuka", 
+    notes: "Layanan kesehatan ramai di pagi hari.", 
+    bestHours: [8, 9, 10], specificDays: [2] 
+  },
+  { 
+    lat: -6.9420, lng: 107.6230, 
+    name: "SMK Bina Warga Buah Batu", 
+    type: "EDUCATION", zone: "Buah Batu", 
+    notes: "Jam pulang sekolah tingkat SMK/SMA.", 
+    bestHours: [14, 15, 16], specificDays: [2] 
+  },
+  { 
+    lat: -6.8900, lng: 107.6000, 
+    name: "AMP FK Unpad (Eijkman)", 
+    type: "EDUCATION", zone: "Sukajadi - Sederhana", 
+    notes: "Aktivitas kampus/akademik pagi hari.", 
+    bestHours: [7, 8, 9], specificDays: [2] 
+  },
 
-  // --- ZONA 4: BARAT (INDUSTRI & GERBANG) ---
-  { lat: -6.8988, lng: 107.5372, name: "Cimahi / Leuwigajah", type: "INDUSTRI", tags: ["BARAT"], bestHours: [6, 7, 14, 15, 22] },
-  { lat: -6.9419, lng: 107.5756, name: "Pasar Induk Caringin", type: "PASAR", tags: ["BARAT"], bestHours: [2, 3, 4, 5] },
-  { lat: -6.8415, lng: 107.4764, name: "Stasiun Whoosh Padalarang", type: "STASIUN", tags: ["BARAT"], bestHours: [9, 10, 13, 17] },
-  { lat: -6.8938, lng: 107.5815, name: "Pasteur / BTC", type: "TRAVEL", tags: ["BARAT"], bestHours: [5, 6, 18, 19] },
-  { lat: -6.9083, lng: 107.5612, name: "Borma Cijerah", type: "BELANJA", tags: ["BARAT"], bestHours: [10, 11, 16, 17] },
+  // --- SENIN ---
+  { 
+    lat: -6.8980, lng: 107.6360, 
+    name: "Seafood Bang Bopak Pahlawan", 
+    type: "CULINARY", zone: "Pahlawan - Katamso", 
+    notes: "Restoran seafood biasanya puncak keramaian saat makan malam.", 
+    bestHours: [18, 19, 20], specificDays: [1] 
+  },
+  { 
+    lat: -6.8900, lng: 107.6150, 
+    name: "SDN 103 Coblong", 
+    type: "EDUCATION", zone: "Dago - Coblong", 
+    notes: "Hotspot sekolah sangat spesifik di jam antar (06:30-07:00).", 
+    bestHours: [6, 7], specificDays: [1] 
+  },
+  { 
+    lat: -6.9000, lng: 107.6350, 
+    name: "Itenas (Institut Teknologi Nasional)", 
+    type: "EDUCATION", zone: "Suci - Itenas", 
+    notes: "Jam bubaran kuliah sore.", 
+    bestHours: [15, 16, 17], specificDays: [1] 
+  },
 
-  // --- ZONA 5: SELATAN (PERMUKIMAN PADAT) ---
-  { lat: -6.9472, lng: 107.6033, name: "Terminal Leuwipanjang", type: "TERMINAL", tags: ["SELATAN"], bestHours: [5, 6, 17, 18] },
-  { lat: -6.9367, lng: 107.5966, name: "RS Immanuel / Kopo", type: "RS", tags: ["SELATAN"], bestHours: [7, 8, 14, 15] },
-  { lat: -6.9490, lng: 107.6320, name: "Buah Batu (Griya)", type: "BELANJA", tags: ["SELATAN"], bestHours: [11, 12, 16, 17] },
-  { lat: -6.9740, lng: 107.6305, name: "Telkom University", type: "KAMPUS", tags: ["SELATAN"], bestHours: [7, 8, 16, 17] },
-  { lat: -6.9175, lng: 107.6186, name: "Dayeuhkolot / Banjir", type: "INDUSTRI", tags: ["SELATAN"], bestHours: [7, 16] }, // Warning zone
+  // --- MINGGU ---
+  { 
+    lat: -6.9150, lng: 107.6420, 
+    name: "Jl. H. Ibrahim Adjie (Kebonwaru)", 
+    type: "RESIDENTIAL", zone: "Kiaracondong - Kebonwaru", 
+    notes: "Area transit padat dan toko kelontong.", 
+    bestHours: [10, 11, 12], specificDays: [0] 
+  },
+  { 
+    lat: -6.9100, lng: 107.6700, 
+    name: "Lapas Sukamiskin", 
+    type: "FACILITY", zone: "Arcamanik - Sukamiskin", 
+    notes: "Jam kunjungan fasilitas umum biasanya pagi menjelang siang.", 
+    bestHours: [9, 10, 11], specificDays: [0] 
+  },
+  { 
+    lat: -6.9350, lng: 107.6300, 
+    name: "Mie Gacoan Gatsu", 
+    type: "CULINARY", zone: "Lengkong - Gatsu", 
+    notes: "Spot kuliner populer, Minggu malam sangat padat.", 
+    bestHours: [18, 19, 20], specificDays: [0] 
+  },
+  { 
+    lat: -6.9350, lng: 107.5750, 
+    name: "UD Sutrisno - Pasar Caringin", 
+    type: "MARKET", zone: "Caringin", 
+    notes: "Aktivitas pasar tradisional/induk pagi buta.", 
+    bestHours: [4, 5, 6], specificDays: [0] 
+  },
 
-  // --- CADANGAN & NICHE ---
-  { lat: -6.9175, lng: 107.6186, name: "SMA BPI / Taruna Bakti", type: "SEKOLAH", tags: ["PUSAT"], bestHours: [6, 13, 14] },
-  { lat: -6.9098, lng: 107.6163, name: "SMAN 3 & 5 Bandung", type: "SEKOLAH", tags: ["PUSAT"], bestHours: [15, 16] },
-  { lat: -6.9159, lng: 107.5986, name: "RS Santosa (Kebon Jati)", type: "RS", tags: ["PUSAT"], bestHours: [7, 11, 12] },
-  { lat: -6.8942, lng: 107.6146, name: "RS Borromeus", type: "RS", tags: ["UTARA"], bestHours: [8, 9, 14, 15] },
-  { lat: -6.9083, lng: 107.6010, name: "RS Mata Cicendo", type: "RS", tags: ["PUSAT"], bestHours: [7, 8, 9] },
-  { lat: -6.8953, lng: 107.6163, name: "Pool Cititrans Dipatiukur", type: "TRAVEL", tags: ["UTARA"], bestHours: [5, 18, 19] },
-  { lat: -6.9056, lng: 107.6044, name: "Pool XTrans Cihampelas", type: "TRAVEL", tags: ["UTARA"], bestHours: [14, 15, 19] },
-  { lat: -6.9022, lng: 107.6136, name: "Roti Gempol", type: "KULINER", tags: ["PUSAT"], bestHours: [7, 8, 9] },
-  { lat: -6.8485, lng: 107.6225, name: "Punclut", type: "WISATA", tags: ["UTARA"], bestHours: [10, 11, 15, 16] }
+  // --- SABTU ---
+  { 
+    lat: -6.9180, lng: 107.6480, 
+    name: "Masjid Jami Nurul Falah", 
+    type: "RESIDENTIAL", zone: "Babakan Sari", 
+    notes: "Aktivitas warga sore hari di kawasan padat.", 
+    bestHours: [15, 16], specificDays: [6] 
+  },
+  { 
+    lat: -6.9200, lng: 107.6400, 
+    name: "Stasiun Kiaracondong (Kedatangan)", 
+    type: "TRANSPORT", zone: "Stasiun Kiaracondong", 
+    notes: "Kedatangan kereta ekonomi/lokal sering terjadi sore hari.", 
+    bestHours: [15, 16, 17], specificDays: [6] 
+  },
+
+  // --- JUMAT ---
+  { 
+    lat: -6.9250, lng: 107.6500, 
+    name: "Pos Honda Jl. PSM", 
+    type: "SERVICE", zone: "Kiaracondong - Sukapura", 
+    notes: "Bengkel/Pos sering ramai setelah Jumatan.", 
+    bestHours: [13, 14], specificDays: [5] 
+  },
+  { 
+    lat: -6.9320, lng: 107.7700, 
+    name: "Jatinangor Town Square (Jatos)", 
+    type: "MALL", zone: "Jatinangor", 
+    notes: "Pusat keramaian mahasiswa Jatinangor (Unpad/ITB/Ikopin) di malam hari.", 
+    bestHours: [18, 19, 20], specificDays: [5] 
+  },
+  { 
+    lat: -6.9250, lng: 107.6360, 
+    name: "Trans Studio Mall (TSM)", 
+    type: "MALL", zone: "Gatot Subroto - TSM", 
+    notes: "Jumat malam adalah peak hour bubaran mall/nonton.", 
+    bestHours: [19, 20, 21], specificDays: [5] 
+  },
+  { 
+    lat: -6.9200, lng: 107.6800, 
+    name: "Perumahan Arcamanik Urban Living", 
+    type: "RESIDENTIAL", zone: "Arcamanik", 
+    notes: "Warga berangkat kerja dari perumahan.", 
+    bestHours: [7, 8], specificDays: [5] 
+  },
+
+  // --- GENERAL / EVERYDAY SPOTS (Backup) ---
+  { lat: -6.9261, lng: 107.7176, name: "Bundaran Cibiru / UIN", type: "EDUCATION", zone: "Cibiru", notes: "Titik temu mahasiswa dan pekerja timur.", bestHours: [6, 7, 16, 17] },
+  { lat: -6.9126, lng: 107.6024, name: "Stasiun Bandung (Pintu Selatan)", type: "TRANSPORT", zone: "Pusat Kota", notes: "Selalu ramai saat kedatangan kereta Jakarta.", bestHours: [9, 10, 15, 16, 19] },
+  { lat: -6.8927, lng: 107.6171, name: "Dipatiukur (Unpad/ITHB)", type: "EDUCATION", zone: "Dago", notes: "Pusat travel dan mahasiswa.", bestHours: [8, 17, 19] },
+  { lat: -6.9472, lng: 107.6033, name: "Terminal Leuwipanjang", type: "TRANSPORT", zone: "Selatan", notes: "Bus AKAP dan Damri.", bestHours: [5, 6, 17] }
 ];
 
 export const STATIC_STRATEGIES: StrategyTip[] = [
@@ -125,26 +299,3 @@ export const MOTIVATION_QUOTES = [
   "Sabar di jalan, gaspol di rezeki. Emosi hanya bikin orderan lari.",
   "Bukan tentang seberapa cepat, tapi seberapa tepat kita ada di lokasi."
 ];
-
-// Compatibility export for existing code using object keys
-export const LOCATIONS = {
-  ASIA_AFRIKA: { lat: -6.9210, lng: 107.6106 },
-  TERMINAL_ANTAPANI: { lat: -6.9135, lng: 107.6625 },
-  ARCAMANIK_SPORT: { lat: -6.9234, lng: 107.6756 },
-  CIBIRU_UIN: { lat: -6.9261, lng: 107.7176 },
-  LEUWIGAJAH: { lat: -6.8988, lng: 107.5372 },
-  SETIABUDI_ATAS: { lat: -6.8624, lng: 107.5936 },
-  BALAI_KOTA: { lat: -6.9140, lng: 107.6101 },
-  RS_SANTOSA: { lat: -6.9159, lng: 107.5986 },
-  DIPATIUKUR: { lat: -6.8927, lng: 107.6171 },
-  ROTI_GEMPOL: { lat: -6.9022, lng: 107.6136 },
-  ITB_GANESHA: { lat: -6.8915, lng: 107.6107 },
-  POOL_CITITRANS_DU: { lat: -6.8953, lng: 107.6163 },
-  POOL_LINTAS_BTC: { lat: -6.8938, lng: 107.5815 },
-  LENGKONG_KECIL: { lat: -6.9247, lng: 107.6152 },
-  RS_IMMANUEL: { lat: -6.9367, lng: 107.5966 },
-  PVJ_MALL: { lat: -6.8922, lng: 107.5959 },
-  AL_JABBAR: { lat: -6.9459, lng: 107.7032 },
-  PUNCLUT: { lat: -6.8485, lng: 107.6225 },
-  STASIUN_BANDUNG: { lat: -6.9126, lng: 107.6024 }
-};

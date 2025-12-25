@@ -5,13 +5,15 @@ import { LOCATIONS_DB, STATIC_STRATEGIES, MOTIVATION_QUOTES } from "../data/know
 // --- UTILITY: Haptic Feedback ---
 export const triggerHaptic = (pattern: 'light' | 'medium' | 'heavy' | 'success' | 'error' = 'light') => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
-    switch (pattern) {
-      case 'light': navigator.vibrate(5); break; 
-      case 'medium': navigator.vibrate(10); break; 
-      case 'heavy': navigator.vibrate(20); break; 
-      case 'success': navigator.vibrate([10, 30, 10]); break; 
-      case 'error': navigator.vibrate([50, 30, 50, 30, 50]); break; 
-    }
+    try {
+        switch (pattern) {
+        case 'light': navigator.vibrate(5); break; 
+        case 'medium': navigator.vibrate(10); break; 
+        case 'heavy': navigator.vibrate(20); break; 
+        case 'success': navigator.vibrate([10, 30, 10]); break; 
+        case 'error': navigator.vibrate([50, 30, 50, 30, 50]); break; 
+        }
+    } catch(e) { /* ignore on unsupported devices */ }
   }
 };
 
@@ -29,72 +31,96 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
   return d; 
 };
 
-// --- LOGIC 1: SMART SPOTS ---
+// --- LOGIC 1: SMART SPOTS (REAL-TIME PRIORITY) ---
 export const findSmartSpots = async (userLat: number, userLng: number): Promise<GacorSpot[]> => {
-  await new Promise(r => setTimeout(r, 400)); // Reduced latency from 600ms
+  // Simulasi latency
+  await new Promise(r => setTimeout(r, 200));
 
   const now = new Date();
-  const day = now.getDay(); 
+  const day = now.getDay(); // 0=Minggu, 1=Senin...
   const hour = now.getHours();
   
-  let candidates = LOCATIONS_DB.filter(loc => {
-    if (day === 0 || day === 6) {
-        return ['WISATA', 'MALL', 'KULINER', 'STASIUN', 'TRAVEL', 'BELANJA'].includes(loc.type);
-    }
-    const isBestHour = loc.bestHours.some(h => Math.abs(h - hour) <= 1);
-    if (loc.type === 'PASAR' && hour < 6) return true;
-    if (loc.type === 'RS' && (hour >= 7 && hour <= 15)) return true;
-    return isBestHour;
+  // 1. Hitung jarak semua spot dulu
+  const mappedSpots = LOCATIONS_DB.map(loc => {
+      const dist = getDistance(userLat, userLng, loc.lat, loc.lng);
+      return { ...loc, distanceVal: dist };
   });
 
-  if (candidates.length < 3) {
-      candidates = LOCATIONS_DB; 
+  // 2. Filter yang relevan (Radius max 10km)
+  // Kita perluas radius sedikit karena data kita sekarang lebih spesifik/sedikit jumlahnya dibanding random points
+  let relevantSpots = mappedSpots.filter(loc => loc.distanceVal <= 10);
+
+  // Fallback: Jika di area sepi database, ambil 5 terdekat apapun itu
+  if (relevantSpots.length < 3) {
+      relevantSpots = mappedSpots.sort((a,b) => a.distanceVal - b.distanceVal).slice(0, 5);
   }
 
-  const scoredSpots = candidates.map(loc => {
-      const dist = getDistance(userLat, userLng, loc.lat, loc.lng);
-      let priority: 'TINGGI' | 'SEDANG' | 'RENDAH' = 'SEDANG';
-      let dynamicReason = "";
+  const scoredSpots = relevantSpots.map(loc => {
+      let priority: 'TINGGI' | 'SEDANG' | 'RENDAH' = 'RENDAH';
+      let dynamicReason = loc.notes; // Default pakai notes asli dari DB
 
-      if (hour < 7) dynamicReason = "Traffic Pagi (Sekolah/Pasar)";
-      else if (hour >= 11 && hour <= 13) dynamicReason = "Jam Makan Siang";
-      else if (hour >= 16 && hour <= 19) dynamicReason = "Golden Hour (Bubaran)";
-      else if (hour > 19) dynamicReason = "Zona Malam/Santai";
-      else dynamicReason = "Standby Area Strategis";
+      // Logic Waktu & Kategori
+      const isBestHour = loc.bestHours.some(h => Math.abs(h - hour) <= 1);
+      
+      // Check Day Specificity (Sangat Penting untuk Data Baru)
+      const isDayMatch = loc.specificDays ? loc.specificDays.includes(day) : true; // True jika general spot
 
-      if (dist <= 3) {
+      // SCORING LOGIC
+      if (isDayMatch && isBestHour) {
           priority = 'TINGGI';
-          dynamicReason += " (Sangat Dekat)";
-      } else if (dist <= 8) {
+          dynamicReason = `🔥 HOTSPOT HARI INI! ${loc.notes}`;
+      } else if (isDayMatch && !isBestHour) {
           priority = 'SEDANG';
-      } else {
+          // Cek apakah jamnya sudah lewat atau belum
+          const firstBest = loc.bestHours[0];
+          if (hour < firstBest) dynamicReason = `Siap-siap untuk jam ${firstBest}:00. ${loc.notes}`;
+          else dynamicReason = `Tadi ramai jam ${firstBest}:00. Coba geser dikit.`;
+      } else if (!isDayMatch && loc.distanceVal < 2) {
+          // Salah hari tapi dekat
           priority = 'RENDAH';
-          dynamicReason = "Cukup jauh, ambil jika searah";
+          dynamicReason = `Biasanya ramai hari ${getDayName(loc.specificDays?.[0])}. Tapi karena dekat, boleh dicoba.`;
       }
 
-      if (hour >= 6 && hour <= 7 && loc.type === 'SEKOLAH') priority = 'TINGGI';
-      if (hour >= 11 && hour <= 13 && loc.type === 'FOOD') priority = 'TINGGI';
-      if (hour >= 17 && hour <= 20 && loc.type === 'MALL') priority = 'TINGGI';
+      // Boost Priority based on Distance (Hyper-local) overrides everything if VERY close
+      if (loc.distanceVal < 0.5 && isDayMatch) {
+          priority = 'TINGGI'; 
+          dynamicReason = "SANGAT DEKAT! " + dynamicReason;
+      }
 
       return {
           name: loc.name,
-          type: loc.type,
+          type: loc.type, // Pakai Type dari DB
           reason: dynamicReason,
-          distanceValue: dist, 
-          distance: dist < 1 ? `${(dist * 1000).toFixed(0)}m` : `${dist.toFixed(1)}km`,
+          distanceValue: loc.distanceVal, 
+          distance: loc.distanceVal < 1 ? `${(loc.distanceVal * 1000).toFixed(0)}m` : `${loc.distanceVal.toFixed(1)}km`,
           coords: { lat: loc.lat, lng: loc.lng },
           priority: priority,
           source: 'AI' as const
       };
   });
 
-  return scoredSpots.sort((a, b) => {
-      const priorityScore = { 'TINGGI': 1, 'SEDANG': 2, 'RENDAH': 3 };
-      if (priorityScore[a.priority] !== priorityScore[b.priority]) {
-          return priorityScore[a.priority] - priorityScore[b.priority];
-      }
-      return a.distanceValue - b.distanceValue;
-  }).slice(0, 5); 
+  // 3. Sorting Final
+  // Filter out 'RENDAH' priority unless we have very few spots
+  let finalSpots = scoredSpots.filter(s => s.priority !== 'RENDAH');
+  if (finalSpots.length < 3) finalSpots = scoredSpots;
+
+  return finalSpots.sort((a, b) => {
+      // Priority Score: TINGGI=0, SEDANG=2, RENDAH=4
+      const pScoreA = a.priority === 'TINGGI' ? 0 : a.priority === 'SEDANG' ? 2 : 4;
+      const pScoreB = b.priority === 'TINGGI' ? 0 : b.priority === 'SEDANG' ? 2 : 4;
+      
+      // Distance weight
+      const totalScoreA = a.distanceValue + pScoreA;
+      const totalScoreB = b.distanceValue + pScoreB;
+
+      return totalScoreA - totalScoreB;
+  }).slice(0, 8); 
+};
+
+const getDayName = (idx?: number) => {
+    const days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    if (idx === undefined) return "Setiap Hari";
+    return days[idx];
 };
 
 // --- LOGIC 2: PERFORMANCE GRADING ---
@@ -130,7 +156,7 @@ export const getSmartStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENTA
 };
 
 export const getAnyepDiagnosis = async (lat: number, lng: number): Promise<string> => {
-    await new Promise(r => setTimeout(r, 600)); // Reduced from 800ms
+    await new Promise(r => setTimeout(r, 600)); 
     const now = new Date();
     const hour = now.getHours();
 
