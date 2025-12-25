@@ -1,241 +1,275 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GacorSpot, Transaction, TransactionType } from '../types';
-import { findSmartSpots, triggerHaptic } from '../services/smartService'; // NEW IMPORT
+import { findSmartSpots, triggerHaptic } from '../services/smartService';
 import { useGeolocation } from '../hooks/useGeolocation';
 
 interface RadarViewProps {
   transactions: Transaction[];
 }
 
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371; 
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-    Math.sin(dLon / 2) * Math.sin(dLon / 2); 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
-  const d = R * c; 
-  return d;
-};
+declare const L: any; // Leaflet global type definition for this environment
 
 export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const { coords, loading: gpsLoading, error: gpsError, getLocation } = useGeolocation();
-  const [activeTab, setActiveTab] = useState<'HISTORY' | 'AI'>('AI'); // Default ke AI (Smart Logic) sekarang
+  const [activeMode, setActiveMode] = useState<'AI' | 'HISTORY'>('AI');
   
-  const [aiSpots, setAiSpots] = useState<GacorSpot[]>([]);
-  const [historySpots, setHistorySpots] = useState<GacorSpot[]>([]);
+  const [spots, setSpots] = useState<GacorSpot[]>([]);
+  const [selectedSpot, setSelectedSpot] = useState<GacorSpot | null>(null);
   
-  const [scanning, setScanning] = useState(false);
-  const [analyzingHistory, setAnalyzingHistory] = useState(false);
+  const mapRef = useRef<any>(null); // Map instance
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const markersRef = useRef<any[]>([]); // Array of current markers
 
+  // 1. Initialize Map
   useEffect(() => {
-    if (!coords && !gpsLoading) {
-        getLocation();
-    }
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    // Default center (Bandung) if no coords yet, will fly to user later
+    const initialLat = -6.9175;
+    const initialLng = 107.6191;
+
+    const map = L.map(mapContainerRef.current, {
+        zoomControl: false,
+        attributionControl: false
+    }).setView([initialLat, initialLng], 13);
+
+    // Dark Matter Tile Layer (CartoDB) - Looks very "app-like"
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    return () => {
+        if (mapRef.current) {
+            mapRef.current.remove();
+            mapRef.current = null;
+        }
+    };
   }, []);
 
+  // 2. Fetch Data Logic
   useEffect(() => {
-    if (coords && transactions.length > 0) {
-      analyzeHistory();
-    }
-  }, [coords, transactions]);
-
-  const analyzeHistory = () => {
-    if (!coords) return;
-    setAnalyzingHistory(true);
-    const now = new Date();
-    const currentHour = now.getHours();
-    
-    const relevantTx = transactions.filter(tx => {
-        if (tx.type !== TransactionType.INCOME || !tx.coords) return false;
-        const txDate = new Date(tx.timestamp);
-        const txHour = txDate.getHours();
-        return Math.abs(txHour - currentHour) <= 2;
-    });
-
-    const spots: GacorSpot[] = relevantTx.reverse().slice(0, 5).map(tx => {
-        let distStr = 'Jauh';
-        let distVal = 9999; // Default distance value
-        
-        if (coords && tx.coords) {
-            const d = calculateDistance(coords.lat, coords.lng, tx.coords.lat, tx.coords.lng);
-            distStr = d < 1 ? `${(d * 1000).toFixed(0)}m` : `${d.toFixed(1)}km`;
-            distVal = d;
-        }
-
-        return {
-            name: tx.description,
-            type: 'LANGGANAN',
-            reason: `Pernah dapat order jam segini`,
-            distance: distStr,
-            distanceValue: distVal,
-            coords: tx.coords,
-            priority: 'TINGGI',
-            source: 'HISTORY'
-        };
-    });
-
-    setHistorySpots(spots);
-    setAnalyzingHistory(false);
-  };
-
-  const handleScanSmart = async () => {
-    triggerHaptic('medium');
     if (!coords) {
         getLocation();
         return;
     }
-    setScanning(true);
-    try {
-        // Panggil Logic Offline (Berdasarkan PDF)
-        const results = await findSmartSpots(coords.lat, coords.lng);
-        setAiSpots(results);
-        triggerHaptic('success');
-    } catch (e) {
-        console.error("Smart Scan failed", e);
+
+    // Fly to user location once found
+    if (mapRef.current) {
+        mapRef.current.setView([coords.lat, coords.lng], 14);
+        renderUserMarker(coords.lat, coords.lng);
     }
-    setScanning(false);
+
+    fetchSpots();
+  }, [coords, activeMode, transactions]);
+
+  // 3. Render Spots on Map
+  useEffect(() => {
+     renderSpotMarkers();
+  }, [spots]);
+
+  const fetchSpots = async () => {
+      if (!coords) return;
+
+      let results: GacorSpot[] = [];
+
+      if (activeMode === 'AI') {
+          // Get from Database logic
+          results = await findSmartSpots(coords.lat, coords.lng);
+      } else {
+          // Get from History logic
+          const now = new Date();
+          const currentHour = now.getHours();
+          
+          const relevantTx = transactions.filter(tx => {
+            if (tx.type !== TransactionType.INCOME || !tx.coords) return false;
+            const txDate = new Date(tx.timestamp);
+            const txHour = txDate.getHours();
+            return Math.abs(txHour - currentHour) <= 3; // Window +/- 3 jam
+          });
+
+          // Deduplicate roughly by name/location
+          const uniqueTx = relevantTx.slice(0, 15); // Limit 15
+
+          results = uniqueTx.map(tx => ({
+              name: tx.description,
+              type: 'LANGGANAN',
+              reason: `Riwayat order jam segini`,
+              distance: '0km', // Will be calculated if needed
+              distanceValue: 0,
+              coords: tx.coords,
+              priority: 'TINGGI',
+              source: 'HISTORY'
+          }));
+      }
+      setSpots(results);
   };
 
-  const openRoute = (spot: GacorSpot) => {
-    triggerHaptic('medium');
-    if (spot.coords) {
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${spot.coords.lat},${spot.coords.lng}`, '_blank');
-    } else {
-        const query = encodeURIComponent(spot.name);
-        window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-    }
+  const renderUserMarker = (lat: number, lng: number) => {
+      if (!mapRef.current) return;
+
+      // Custom Pulse Icon for User
+      const userIcon = L.divIcon({
+          className: 'custom-user-marker',
+          html: `<div class="relative w-6 h-6">
+                    <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-75"></div>
+                    <div class="absolute inset-0 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div>
+                 </div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+      });
+
+      // Clear existing user marker if tracked differently, 
+      // but for simple implementation we usually just add it once or update it.
+      // Here we assume simple one-time add for demo.
+      L.marker([lat, lng], { icon: userIcon, zIndexOffset: 1000 }).addTo(mapRef.current);
   };
 
-  const handleTabChange = (tab: 'HISTORY' | 'AI') => {
+  const renderSpotMarkers = () => {
+      if (!mapRef.current) return;
+
+      // Clear old markers
+      markersRef.current.forEach(m => mapRef.current.removeLayer(m));
+      markersRef.current = [];
+
+      spots.forEach(spot => {
+          if (!spot.coords) return;
+
+          const color = spot.source === 'HISTORY' ? 'text-yellow-400' : 'text-cyan-400';
+          const iconHtml = `<div class="custom-marker-pin ${color}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 drop-shadow-md transform transition-transform hover:-translate-y-1" viewBox="0 0 24 24" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+                                </svg>
+                            </div>`;
+
+          const icon = L.divIcon({
+              className: 'bg-transparent border-none',
+              html: iconHtml,
+              iconSize: [32, 32],
+              iconAnchor: [16, 32]
+          });
+
+          const marker = L.marker([spot.coords.lat, spot.coords.lng], { icon })
+            .addTo(mapRef.current)
+            .on('click', () => {
+                triggerHaptic('light');
+                setSelectedSpot(spot);
+                // Center map on click slightly offset to show bottom sheet
+                mapRef.current.flyTo([spot.coords!.lat - 0.002, spot.coords!.lng], 15, { duration: 0.5 });
+            });
+          
+          markersRef.current.push(marker);
+      });
+  };
+
+  const handleNavigate = () => {
+      if (!selectedSpot || !selectedSpot.coords) return;
+      triggerHaptic('medium');
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${selectedSpot.coords.lat},${selectedSpot.coords.lng}`, '_blank');
+  };
+
+  const toggleMode = (mode: 'AI' | 'HISTORY') => {
       triggerHaptic('light');
-      setActiveTab(tab);
+      setActiveMode(mode);
+      setSelectedSpot(null); // Close sheet
   };
-
-  const currentSpots = activeTab === 'HISTORY' ? historySpots : aiSpots;
-  const mainColor = activeTab === 'HISTORY' ? 'yellow' : 'cyan';
 
   return (
-    <div className="min-h-screen bg-slate-900 pb-28 animate-fade-in flex flex-col">
-      <div className="bg-slate-900/90 backdrop-blur-md p-6 pt-safe pb-4 border-b border-slate-800 sticky top-0 z-30 shadow-lg">
-         <div className="flex justify-between items-center mb-4">
-            <h1 className="text-xl font-black text-slate-100 flex items-center gap-3 tracking-wide">
-                <span className={`text-${mainColor}-400 animate-pulse`}>📡</span> RADAR GACOR
-            </h1>
-         </div>
+    <div className="relative h-[calc(100vh-84px)] w-full bg-slate-950 overflow-hidden">
+        
+        {/* Map Container */}
+        <div ref={mapContainerRef} className="absolute inset-0 z-0"></div>
 
-         <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
-             <button 
-                onClick={() => handleTabChange('HISTORY')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'HISTORY' ? 'bg-yellow-500 text-slate-900 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-             >
-                Riwayat Saya
-             </button>
-             <button 
-                onClick={() => handleTabChange('AI')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'AI' ? 'bg-cyan-500 text-slate-900 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-             >
-                Smart Spot (Buku Saku)
-             </button>
-         </div>
-      </div>
+        {/* Overlay: Top Control Bar */}
+        <div className="absolute top-0 left-0 right-0 p-4 pt-safe z-10 pointer-events-none">
+            <div className="flex justify-between items-start">
+                <div className="bg-slate-900/90 backdrop-blur-md p-2 rounded-2xl border border-slate-700 shadow-xl pointer-events-auto">
+                    <div className="flex gap-1">
+                        <button 
+                            onClick={() => toggleMode('AI')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeMode === 'AI' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            🤖 Rekomendasi
+                        </button>
+                        <button 
+                            onClick={() => toggleMode('HISTORY')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeMode === 'HISTORY' ? 'bg-yellow-500 text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            📒 Riwayatku
+                        </button>
+                    </div>
+                </div>
 
-      <div className="flex-1 p-4 flex flex-col items-center w-full max-w-lg mx-auto">
-        <div className="relative w-72 h-72 my-8 flex items-center justify-center">
-            <div className={`absolute w-full h-full border-2 rounded-full opacity-20 ${activeTab === 'HISTORY' ? 'border-yellow-500' : 'border-cyan-500'} animate-ping`}></div>
-            <div className={`absolute w-3/4 h-3/4 border border-dashed rounded-full opacity-40 ${activeTab === 'HISTORY' ? 'border-yellow-500' : 'border-cyan-500'}`}></div>
-            <div className={`absolute w-1/2 h-1/2 border rounded-full opacity-60 ${activeTab === 'HISTORY' ? 'border-yellow-500' : 'border-cyan-500'}`}></div>
+                <button 
+                    onClick={getLocation}
+                    className="bg-slate-900/90 backdrop-blur-md text-white p-3 rounded-2xl border border-slate-700 shadow-xl active:scale-95 transition-transform pointer-events-auto"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${gpsLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </button>
+            </div>
             
-            {(scanning || analyzingHistory || gpsLoading) && (
-                <div className={`absolute w-full h-full rounded-full animate-spin-slow bg-gradient-to-t border-t-2 ${activeTab === 'HISTORY' ? 'from-yellow-500/10 border-yellow-400' : 'from-cyan-500/10 border-cyan-400'} to-transparent`}></div>
-            )}
-
-            <div className="relative z-10 bg-slate-900 p-2 rounded-full border-4 border-slate-800 shadow-2xl">
-                 <div className={`w-4 h-4 rounded-full ${activeTab === 'HISTORY' ? 'bg-yellow-400' : 'bg-cyan-400'} ${gpsLoading ? 'animate-bounce' : 'shadow-[0_0_20px_currentColor]'}`}></div>
+            {/* Info Badge */}
+            <div className="mt-4 flex justify-center">
+                 <span className="bg-slate-950/80 backdrop-blur text-[10px] text-slate-300 px-3 py-1 rounded-full border border-slate-800 shadow-lg pointer-events-auto">
+                    {activeMode === 'AI' ? `📡 Memindai Database Pukul ${new Date().getHours()}:00` : `📂 Memuat Riwayat Order Pukul ${new Date().getHours()}:00`}
+                 </span>
             </div>
         </div>
 
-        <div className="text-center mb-8 w-full px-6">
-            {gpsLoading ? (
-                 <p className="text-sm font-bold text-slate-400 animate-pulse">
-                    Mencari koordinat satelit...
-                </p>
-            ) : gpsError || !coords ? (
-                <div className="flex flex-col items-center gap-2">
-                    <div className="inline-flex items-center gap-2 bg-red-500/10 text-red-400 px-4 py-2 rounded-full border border-red-500/20 text-xs font-bold">
-                         📍 {gpsError || "Lokasi belum terkunci"}
-                    </div>
+        {/* Overlay: Bottom Sheet Detail */}
+        {selectedSpot && (
+            <div className="absolute bottom-4 left-4 right-4 z-20 animate-slide-up">
+                <div className="bg-slate-900/95 backdrop-blur-xl rounded-3xl p-5 border border-slate-700 shadow-2xl relative overflow-hidden">
+                    {/* Glow effect based on type */}
+                    <div className={`absolute top-0 left-0 w-full h-1 ${activeMode === 'AI' ? 'bg-cyan-500' : 'bg-yellow-500'}`}></div>
+                    
                     <button 
-                        onClick={getLocation}
-                        className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold border border-slate-700 mt-2"
+                        onClick={() => setSelectedSpot(null)}
+                        className="absolute top-3 right-3 text-slate-500 hover:text-white p-2"
                     >
-                        🔄 Coba Lagi
+                        ✕
                     </button>
-                </div>
-            ) : activeTab === 'AI' && !scanning && aiSpots.length === 0 ? (
-                <button 
-                    onClick={handleScanSmart}
-                    className="group relative bg-cyan-500 hover:bg-cyan-400 text-slate-900 text-sm font-black py-4 px-10 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all active:scale-95 overflow-hidden"
-                >
-                    <span className="relative z-10 flex items-center gap-2">
-                        CEK JADWAL & LOKASI (PDF)
-                        <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                    </span>
-                    <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-                </button>
-            ) : null}
-        </div>
 
-        <div className="w-full space-y-3">
-            {currentSpots.map((spot, idx) => (
-                <div 
-                    key={idx} 
-                    className={`bg-slate-800/80 backdrop-blur-sm rounded-2xl p-4 border relative overflow-hidden group animate-slide-up transition-all active:scale-[0.98] ${
-                        activeTab === 'HISTORY' 
-                        ? 'border-yellow-500/20 hover:border-yellow-500/50' 
-                        : 'border-cyan-500/20 hover:border-cyan-500/50'
-                    }`}
-                    style={{ animationDelay: `${idx * 100}ms` }}
-                >
-                    <div className="flex justify-between items-start">
-                        <div className="flex-1 pr-4">
-                            <div className="flex items-center gap-2 mb-1.5">
-                                <span className={`text-slate-900 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm ${activeTab === 'HISTORY' ? 'bg-yellow-500' : 'bg-cyan-500'}`}>
-                                    {activeTab === 'HISTORY' ? 'LANGGANAN' : 'BUKU SAKU'}
+                    <div className="flex items-start gap-4 mb-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ${activeMode === 'AI' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                            📍
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${activeMode === 'AI' ? 'bg-cyan-900 text-cyan-300' : 'bg-yellow-900 text-yellow-300'}`}>
+                                    {selectedSpot.type}
                                 </span>
-                                <span className="text-[9px] text-slate-400 font-bold tracking-wider border border-slate-700 px-1.5 py-0.5 rounded">
-                                    {spot.type}
-                                </span>
+                                {selectedSpot.priority === 'TINGGI' && (
+                                    <span className="text-[10px] font-black bg-red-900 text-red-300 px-1.5 py-0.5 rounded animate-pulse">
+                                        PRIORITAS
+                                    </span>
+                                )}
                             </div>
-                            <h3 className="text-lg font-bold text-white leading-tight mb-1">{spot.name}</h3>
-                            <p className="text-xs text-slate-400 leading-snug">"{spot.reason}"</p>
-                        </div>
-                        <div className="text-right shrink-0 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
-                            <p className="text-xs text-slate-400 uppercase font-bold mb-0.5">Jarak</p>
-                            <p className={`text-sm font-mono font-black ${activeTab === 'HISTORY' ? 'text-yellow-400' : 'text-cyan-400'}`}>{spot.distance}</p>
+                            <h3 className="text-lg font-bold text-white leading-tight pr-6">{selectedSpot.name}</h3>
                         </div>
                     </div>
 
-                    <button 
-                        onClick={() => openRoute(spot)}
-                        className={`mt-4 w-full text-slate-900 text-xs font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-all hover:brightness-110 shadow-lg ${
-                            activeTab === 'HISTORY'
-                            ? 'bg-gradient-to-r from-yellow-500 to-yellow-400 shadow-yellow-500/20'
-                            : 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white shadow-cyan-500/20'
-                        }`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                        NAVIGASI
-                    </button>
+                    <div className="bg-slate-950/50 rounded-xl p-3 mb-4 border border-slate-800">
+                        <p className="text-xs text-slate-400 italic">"{selectedSpot.reason}"</p>
+                    </div>
+
+                    <div className="flex gap-2">
+                         <button 
+                            onClick={handleNavigate}
+                            className={`flex-1 py-3.5 rounded-xl font-black text-sm shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 ${activeMode === 'AI' ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-900' : 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'}`}
+                         >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            GASPOL NAVIGASI
+                        </button>
+                    </div>
                 </div>
-            ))}
-        </div>
-      </div>
+            </div>
+        )}
     </div>
   );
 };
