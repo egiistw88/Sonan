@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { DailyTargets, DEFAULT_TARGETS } from '../types';
+import { triggerHaptic } from '../services/smartService';
 
 interface OnboardingWizardProps {
   onFinish: (targets: DailyTargets) => void;
@@ -13,8 +14,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onFinish }) 
   const [installment, setInstallment] = useState('0');
 
   const handleNext = () => {
-    if (step < 3) setStep(step + 1);
-    else {
+    if (step < 3) {
+        triggerHaptic('light');
+        setStep(step + 1);
+    } else {
+        triggerHaptic('success');
         onFinish({
             orders: parseInt(orders) || 20,
             revenue: parseInt(revenue) || 200000,

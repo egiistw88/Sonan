@@ -1,4 +1,6 @@
+
 import React from 'react';
+import { triggerHaptic } from '../services/smartService';
 
 interface BottomNavProps {
   activeTab: 'dashboard' | 'radar' | 'wallet' | 'strategy';
@@ -8,6 +10,16 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, onFabClick }) => {
   
+  const handleTabClick = (tab: 'dashboard' | 'radar' | 'wallet' | 'strategy') => {
+      triggerHaptic('light');
+      onTabChange(tab);
+  };
+
+  const handleFabClick = () => {
+      triggerHaptic('heavy');
+      onFabClick();
+  };
+
   const getTabClass = (tabName: string, color: string) => {
       const isActive = activeTab === tabName;
       return `flex flex-col items-center gap-1.5 w-16 pt-3 pb-1 rounded-2xl transition-all duration-300 ${
@@ -22,7 +34,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
       
       {/* Home Tab */}
       <button 
-        onClick={() => onTabChange('dashboard')}
+        onClick={() => handleTabClick('dashboard')}
         className={getTabClass('dashboard', 'text-yellow-400')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
@@ -33,7 +45,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
 
       {/* Radar Tab */}
       <button 
-        onClick={() => onTabChange('radar')}
+        onClick={() => handleTabClick('radar')}
         className={getTabClass('radar', 'text-cyan-400')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
@@ -46,7 +58,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
       <div className="relative -top-8">
         <div className="absolute inset-0 bg-yellow-500 blur-xl opacity-20 rounded-full animate-pulse-slow"></div>
         <button 
-            onClick={onFabClick}
+            onClick={handleFabClick}
             className="relative bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-900 rounded-full w-16 h-16 flex items-center justify-center shadow-2xl shadow-yellow-500/40 transform transition-transform active:scale-90 border-[6px] border-slate-900 z-50 group"
         >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 transition-transform group-hover:rotate-90 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -57,7 +69,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
 
       {/* Wallet Tab */}
       <button 
-        onClick={() => onTabChange('wallet')}
+        onClick={() => handleTabClick('wallet')}
         className={getTabClass('wallet', 'text-green-400')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
@@ -68,7 +80,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
 
        {/* Strategy Tab */}
        <button 
-        onClick={() => onTabChange('strategy')}
+        onClick={() => handleTabClick('strategy')}
         className={getTabClass('strategy', 'text-purple-400')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">

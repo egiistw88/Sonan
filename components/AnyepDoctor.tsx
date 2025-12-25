@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { getAnyepDiagnosis } from '../services/smartService'; // NEW IMPORT
+import { getAnyepDiagnosis, triggerHaptic } from '../services/smartService';
 import { useGeolocation } from '../hooks/useGeolocation';
 
 interface AnyepDoctorProps {
@@ -30,12 +30,13 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
   const activeCoords = userCoords || localCoords;
 
   const handleDiagnose = async () => {
+    triggerHaptic('medium');
     if (!activeCoords) {
-        // Fallback jika GPS mati: tetap berikan diagnosa umum berdasarkan waktu
         setLoading(true);
         const result = await getAnyepDiagnosis(0, 0); 
         setDiagnosis(result);
         setLoading(false);
+        triggerHaptic('success');
         return;
     }
     
@@ -43,6 +44,7 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
     const result = await getAnyepDiagnosis(activeCoords.lat, activeCoords.lng);
     setDiagnosis(result);
     setLoading(false);
+    triggerHaptic('success');
   };
 
   return (
@@ -84,7 +86,7 @@ export const AnyepDoctor: React.FC<AnyepDoctorProps> = ({ onClose, userCoords })
                             </p>
                         </div>
                         <button 
-                            onClick={onClose}
+                            onClick={() => { triggerHaptic('light'); onClose(); }}
                             className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-colors"
                         >
                             SIAP LAKSANAKAN

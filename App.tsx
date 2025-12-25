@@ -3,18 +3,17 @@ import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { AppProvider, useAppStore } from './context/GlobalState';
 import { TransactionForm } from './components/TransactionForm';
 import { BottomNav } from './components/BottomNav';
-import { DashboardView } from './components/DashboardView'; // Eager load Dashboard (Landing Page)
+import { DashboardView } from './components/DashboardView'; // Eager load Dashboard
 import { DailyMotivation } from './components/DailyMotivation';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { Toast } from './components/Toast';
 import { AnyepDoctor } from './components/AnyepDoctor';
-import { TransactionType, TransactionCategory, WeatherData } from './types';
+import { TransactionType, TransactionCategory, WeatherData, PaymentMethod } from './types';
 import { getDailyMotivation } from './services/smartService';
 import { speakStats } from './services/audioService';
 import { useGeolocation } from './hooks/useGeolocation';
 
-// --- LAZY LOADED COMPONENTS (Performance Strategy) ---
-// Menggunakan import() promise mapping karena komponen menggunakan named exports
+// --- LAZY LOADED COMPONENTS ---
 const RadarView = React.lazy(() => import('./components/RadarView').then(module => ({ default: module.RadarView })));
 const WalletView = React.lazy(() => import('./components/WalletView').then(module => ({ default: module.WalletView })));
 const StrategyView = React.lazy(() => import('./components/StrategyView').then(module => ({ default: module.StrategyView })));
@@ -27,7 +26,6 @@ const LoadingScreen = () => (
 );
 
 const AppContent: React.FC = () => {
-  // Navigation State (Local UI State)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'radar' | 'wallet' | 'strategy'>('dashboard');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAnyepDoctor, setShowAnyepDoctor] = useState(false);
@@ -35,14 +33,12 @@ const AppContent: React.FC = () => {
   const [motivationMessage, setMotivationMessage] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // Global Data from Store
-  const { state, dispatch, activeTransactions } = useAppStore();
-  const { targets, isOnboardingDone } = state;
+  const { state, activeTransactions, handleCloudAction } = useAppStore();
+  const { targets, isOnboardingDone, isSyncing } = state;
 
-  // Services
   const { coords: userCoords, getLocation: getGpsLocation } = useGeolocation();
 
-  // Weather State (Offline Friendly)
+  // Weather State
   const [weather] = useState<WeatherData>({
     locationName: 'Bandung',
     temp: '24°C',
@@ -55,18 +51,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     getGpsLocation();
     
-    // Show motivation if onboarding is done
     if (isOnboardingDone) {
         const msg = getDailyMotivation();
         setMotivationMessage(msg);
-        // Small delay for smooth entry
         setTimeout(() => setShowMotivation(true), 1000);
     }
   }, [getGpsLocation, isOnboardingDone]);
 
   // --- ACTIONS ---
   const handleFinishOnboarding = (newTargets: any) => {
-      dispatch({ type: 'COMPLETE_ONBOARDING', payload: newTargets });
+      handleCloudAction({ type: 'COMPLETE_ONBOARDING', payload: newTargets });
       setToast({ msg: 'Profil Siap! Cek "SOP Pre-Flight" sekarang!', type: 'success' });
       
       const msg = getDailyMotivation();
@@ -75,21 +69,29 @@ const AppContent: React.FC = () => {
   };
 
   const handleUpdateTargets = (newTargets: any) => {
-      dispatch({ type: 'SET_TARGETS', payload: newTargets });
+      handleCloudAction({ type: 'SET_TARGETS', payload: newTargets });
       setToast({ msg: 'Pengaturan Disimpan! 🎯', type: 'success' });
   };
 
   const handleImportData = (tx: any[], tg: any) => {
-      dispatch({ type: 'IMPORT_DATA', payload: { transactions: tx, targets: tg } });
+      handleCloudAction({ type: 'IMPORT_DATA', payload: { transactions: tx, targets: tg } });
       setToast({ msg: 'Data Berhasil Dipulihkan', type: 'success' });
   };
 
   const handleResetData = () => {
-      dispatch({ type: 'RESET_DATA' });
+      handleCloudAction({ type: 'RESET_DATA' });
       window.location.reload(); 
   };
 
-  const handleAddTransaction = (amount: number, type: TransactionType, category: TransactionCategory, description: string, isOrder: boolean, coords?: { lat: number; lng: number }) => {
+  const handleAddTransaction = (
+    amount: number, 
+    type: TransactionType, 
+    category: TransactionCategory, 
+    description: string, 
+    isOrder: boolean, 
+    coords: { lat: number; lng: number } | undefined,
+    paymentMethod: PaymentMethod
+  ) => {
     const newTx = {
       id: Date.now().toString(),
       amount,
@@ -98,38 +100,56 @@ const AppContent: React.FC = () => {
       description,
       timestamp: Date.now(),
       isOrder,
-      coords
+      coords,
+      paymentMethod
     };
-    dispatch({ type: 'ADD_TRANSACTION', payload: newTx });
+    handleCloudAction({ type: 'ADD_TRANSACTION', payload: newTx });
     setToast({ msg: 'Data Berhasil Disimpan!', type: 'success' });
   };
 
   const handleDeleteTransaction = (id: string) => {
     if (window.confirm("Yakin ingin menghapus catatan ini?")) {
-        dispatch({ type: 'DELETE_TRANSACTION', payload: id });
+        handleCloudAction({ type: 'DELETE_TRANSACTION', payload: id });
         setToast({ msg: 'Data Dihapus (Soft Delete)', type: 'info' });
     }
   };
 
-  // --- STATS CALCULATION (Computed Properties) ---
+  // --- STATS CALCULATION (SPEED & ACCURACY OPTIMIZED) ---
   const stats = useMemo(() => {
+    // Total Revenue (Gross) - Tunai & Non Tunai
     const revenue = activeTransactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + t.amount, 0);
     
+    // Total Expenses
     const expenses = activeTransactions
       .filter(t => t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const orders = activeTransactions.filter(t => t.isOrder).length;
     
-    const realCash = revenue - expenses; 
+    // REAL CASH CALCULATION (Accuracy Logic)
+    // Cash In Hand = (Income CASH) - (Expense CASH)
+    const cashIncome = activeTransactions
+        .filter(t => t.type === TransactionType.INCOME && (!t.paymentMethod || t.paymentMethod === 'CASH'))
+        .reduce((sum, t) => sum + t.amount, 0);
+        
+    const cashExpense = activeTransactions
+        .filter(t => t.type === TransactionType.EXPENSE && (!t.paymentMethod || t.paymentMethod === 'CASH'))
+        .reduce((sum, t) => sum + t.amount, 0);
+
+    const realCash = cashIncome - cashExpense;
+
+    // Budgeting Logic
     const appBalance = Math.floor(revenue * 0.15); 
     const gasFundBudget = Math.floor(revenue * 0.20);      
     const serviceFund = Math.floor(revenue * 0.05);  
     const dailyInstallment = targets.dailyInstallment || 0;
-    const totalObligations = appBalance + serviceFund + dailyInstallment;
-    const cleanProfit = realCash - totalObligations;
+    
+    // Net Profit calculation (Revenue - Obligations)
+    const totalObligations = appBalance + serviceFund + dailyInstallment + (expenses - cashExpense); // Adjust logic if needed
+    // Simplified Clean Profit: Real Money Left after daily obligations simulation
+    const cleanProfit = revenue - expenses - dailyInstallment;
     
     return { 
       revenue, expenses, orders, realCash, 
@@ -141,52 +161,6 @@ const AppContent: React.FC = () => {
   const handleVoiceReport = () => {
       speakStats(stats.orders, targets.orders, stats.realCash, "Semangat pejuang keluarga!");
       setToast({ msg: '🔊 Membacakan Laporan...', type: 'info' });
-  };
-
-  // --- RENDER ROUTER ---
-  const renderContent = () => {
-    switch(activeTab) {
-      case 'dashboard':
-        return (
-          <DashboardView 
-            weather={weather}
-            onRefreshWeather={() => setToast({msg: "Cuaca offline (Statik)", type: "info"})}
-            stats={stats}
-            transactions={activeTransactions}
-            onDelete={handleDeleteTransaction}
-            targets={targets}
-            onUpdateTargets={handleUpdateTargets}
-            onImportData={handleImportData}
-            onResetData={handleResetData}
-            onOpenAnyepDoctor={() => setShowAnyepDoctor(true)}
-            onVoiceReport={handleVoiceReport}
-          />
-        );
-      case 'radar':
-        return (
-          <Suspense fallback={<LoadingScreen />}>
-            <RadarView transactions={activeTransactions} />
-          </Suspense>
-        );
-      case 'wallet':
-        return (
-           <Suspense fallback={<LoadingScreen />}>
-            <WalletView 
-              stats={stats}
-              transactions={activeTransactions}
-              onDelete={handleDeleteTransaction}
-            />
-          </Suspense>
-        );
-      case 'strategy':
-        return (
-          <Suspense fallback={<LoadingScreen />}>
-            <StrategyView />
-          </Suspense>
-        );
-      default:
-        return null;
-    }
   };
 
   return (
@@ -207,7 +181,51 @@ const AppContent: React.FC = () => {
 
         {showAnyepDoctor && <AnyepDoctor onClose={() => setShowAnyepDoctor(false)} userCoords={userCoords} />}
 
-        {renderContent()}
+        {(() => {
+          switch(activeTab) {
+            case 'dashboard':
+              return (
+                <DashboardView 
+                  weather={weather}
+                  onRefreshWeather={() => setToast({msg: "Cuaca offline (Statik)", type: "info"})}
+                  stats={stats}
+                  transactions={activeTransactions}
+                  onDelete={handleDeleteTransaction}
+                  targets={targets}
+                  onUpdateTargets={handleUpdateTargets}
+                  onImportData={handleImportData}
+                  onResetData={handleResetData}
+                  onOpenAnyepDoctor={() => setShowAnyepDoctor(true)}
+                  onVoiceReport={handleVoiceReport}
+                  isSyncing={isSyncing} // Pass sync status
+                />
+              );
+            case 'radar':
+              return (
+                <Suspense fallback={<LoadingScreen />}>
+                  <RadarView transactions={activeTransactions} />
+                </Suspense>
+              );
+            case 'wallet':
+              return (
+                 <Suspense fallback={<LoadingScreen />}>
+                  <WalletView 
+                    stats={stats}
+                    transactions={activeTransactions}
+                    onDelete={handleDeleteTransaction}
+                  />
+                </Suspense>
+              );
+            case 'strategy':
+              return (
+                <Suspense fallback={<LoadingScreen />}>
+                  <StrategyView />
+                </Suspense>
+              );
+            default:
+              return null;
+          }
+        })()}
         
         {showAddModal && <TransactionForm onAdd={handleAddTransaction} onClose={() => setShowAddModal(false)} />}
 
@@ -217,7 +235,6 @@ const AppContent: React.FC = () => {
   );
 };
 
-// Root Component wrapped with Provider
 const App: React.FC = () => {
   return (
     <AppProvider>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GacorSpot, Transaction, TransactionType } from '../types';
-import { findSmartSpots } from '../services/smartService'; // NEW IMPORT
+import { findSmartSpots, triggerHaptic } from '../services/smartService'; // NEW IMPORT
 import { useGeolocation } from '../hooks/useGeolocation';
 
 interface RadarViewProps {
@@ -71,7 +71,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             type: 'LANGGANAN',
             reason: `Pernah dapat order jam segini`,
             distance: distStr,
-            distanceValue: distVal, // FIX: Property required by GacorSpot type
+            distanceValue: distVal,
             coords: tx.coords,
             priority: 'TINGGI',
             source: 'HISTORY'
@@ -83,6 +83,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   };
 
   const handleScanSmart = async () => {
+    triggerHaptic('medium');
     if (!coords) {
         getLocation();
         return;
@@ -92,6 +93,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         // Panggil Logic Offline (Berdasarkan PDF)
         const results = await findSmartSpots(coords.lat, coords.lng);
         setAiSpots(results);
+        triggerHaptic('success');
     } catch (e) {
         console.error("Smart Scan failed", e);
     }
@@ -99,12 +101,18 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   };
 
   const openRoute = (spot: GacorSpot) => {
+    triggerHaptic('medium');
     if (spot.coords) {
         window.open(`https://www.google.com/maps/dir/?api=1&destination=${spot.coords.lat},${spot.coords.lng}`, '_blank');
     } else {
         const query = encodeURIComponent(spot.name);
         window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
     }
+  };
+
+  const handleTabChange = (tab: 'HISTORY' | 'AI') => {
+      triggerHaptic('light');
+      setActiveTab(tab);
   };
 
   const currentSpots = activeTab === 'HISTORY' ? historySpots : aiSpots;
@@ -121,13 +129,13 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
 
          <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
              <button 
-                onClick={() => setActiveTab('HISTORY')}
+                onClick={() => handleTabChange('HISTORY')}
                 className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'HISTORY' ? 'bg-yellow-500 text-slate-900 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
              >
                 Riwayat Saya
              </button>
              <button 
-                onClick={() => setActiveTab('AI')}
+                onClick={() => handleTabChange('AI')}
                 className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'AI' ? 'bg-cyan-500 text-slate-900 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
              >
                 Smart Spot (Buku Saku)

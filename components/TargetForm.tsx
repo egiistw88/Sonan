@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { DailyTargets } from '../types';
+import { triggerHaptic } from '../services/smartService';
 
 interface TargetFormProps {
   currentTargets: DailyTargets;
@@ -15,6 +16,7 @@ export const TargetForm: React.FC<TargetFormProps> = ({ currentTargets, onSave, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    triggerHaptic('success');
     onSave({
         orders: parseInt(orders) || 0,
         revenue: parseInt(revenue) || 0,

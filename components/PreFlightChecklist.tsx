@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { triggerHaptic } from '../services/smartService';
 
 interface PreFlightChecklistProps {
   onClose: () => void;
@@ -28,6 +29,7 @@ export const PreFlightChecklist: React.FC<PreFlightChecklistProps> = ({ onClose 
   }, []);
 
   const toggleItem = (id: string) => {
+    triggerHaptic('light'); // Feedback 'cetek'
     const newState = { ...checkedItems, [id]: !checkedItems[id] };
     setCheckedItems(newState);
     
@@ -80,7 +82,11 @@ export const PreFlightChecklist: React.FC<PreFlightChecklistProps> = ({ onClose 
             </div>
 
             <button
-                onClick={onClose}
+                onClick={() => {
+                    if (allChecked) triggerHaptic('success');
+                    else triggerHaptic('medium');
+                    onClose();
+                }}
                 className={`w-full mt-8 py-4 rounded-xl font-black text-lg transition-all ${
                     allChecked 
                     ? 'bg-green-500 text-white shadow-lg shadow-green-500/30 hover:bg-green-400' 

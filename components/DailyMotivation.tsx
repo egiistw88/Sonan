@@ -1,4 +1,6 @@
+
 import React from 'react';
+import { triggerHaptic } from '../services/smartService';
 
 interface DailyMotivationProps {
   message: string;
@@ -36,7 +38,7 @@ export const DailyMotivation: React.FC<DailyMotivationProps> = ({ message, onClo
 
             {!loading && (
                 <button 
-                    onClick={onClose}
+                    onClick={() => { triggerHaptic('medium'); onClose(); }}
                     className="mt-8 bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-black py-4 px-8 rounded-xl w-full shadow-lg shadow-yellow-500/20 transform transition-all active:scale-95"
                 >
                     SIAP GASPOL! 🚀

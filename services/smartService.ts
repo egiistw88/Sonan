@@ -2,9 +2,22 @@
 import { GacorSpot, StrategyTip, PerformanceGrade, VehicleHealth } from "../types";
 import { LOCATIONS_DB, STATIC_STRATEGIES, MOTIVATION_QUOTES } from "../data/knowledgeBase";
 
+// --- UTILITY: Haptic Feedback ---
+export const triggerHaptic = (pattern: 'light' | 'medium' | 'heavy' | 'success' | 'error' = 'light') => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    switch (pattern) {
+      case 'light': navigator.vibrate(5); break; 
+      case 'medium': navigator.vibrate(10); break; 
+      case 'heavy': navigator.vibrate(20); break; 
+      case 'success': navigator.vibrate([10, 30, 10]); break; 
+      case 'error': navigator.vibrate([50, 30, 50, 30, 50]); break; 
+    }
+  }
+};
+
 // --- UTILITY: Calculate Distance (Haversine) ---
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
@@ -13,55 +26,42 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     Math.sin(dLon / 2) * Math.sin(dLon / 2); 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
   const d = R * c; 
-  return d; // Distance in km
+  return d; 
 };
 
-// --- LOGIC 1: SMART SPOTS (DATA-DRIVEN + GEO-INTELLIGENCE) ---
+// --- LOGIC 1: SMART SPOTS ---
 export const findSmartSpots = async (userLat: number, userLng: number): Promise<GacorSpot[]> => {
-  await new Promise(r => setTimeout(r, 600)); // Simulasi processing
+  await new Promise(r => setTimeout(r, 400)); // Reduced latency from 600ms
 
   const now = new Date();
-  const day = now.getDay(); // 0 = Sunday, 1 = Monday
+  const day = now.getDay(); 
   const hour = now.getHours();
   
-  // 1. FILTER CANDIDATES BERDASARKAN WAKTU & HARI
   let candidates = LOCATIONS_DB.filter(loc => {
-    // Weekend Logic (Sabtu=6, Minggu=0)
     if (day === 0 || day === 6) {
-        // Di weekend, prioritaskan Wisata, Mall, Kuliner, Stasiun
         return ['WISATA', 'MALL', 'KULINER', 'STASIUN', 'TRAVEL', 'BELANJA'].includes(loc.type);
     }
-    
-    // Weekday Logic: Cek apakah jam sekarang termasuk 'bestHours' lokasi tersebut
-    // Kita berikan toleransi +/- 1 jam
     const isBestHour = loc.bestHours.some(h => Math.abs(h - hour) <= 1);
-    
-    // Khusus RS dan Pasar, selalu relevan di jam-jam tertentu
     if (loc.type === 'PASAR' && hour < 6) return true;
     if (loc.type === 'RS' && (hour >= 7 && hour <= 15)) return true;
-
     return isBestHour;
   });
 
-  // Jika hasil filter sedikit (misal jam sepi), ambil lokasi umum terdekat (Fallback)
   if (candidates.length < 3) {
-      candidates = LOCATIONS_DB; // Buka semua kemungkinan, nanti disort jarak
+      candidates = LOCATIONS_DB; 
   }
 
-  // 2. SCORING BERDASARKAN JARAK & KONTEKS
   const scoredSpots = candidates.map(loc => {
       const dist = getDistance(userLat, userLng, loc.lat, loc.lng);
       let priority: 'TINGGI' | 'SEDANG' | 'RENDAH' = 'SEDANG';
       let dynamicReason = "";
 
-      // Tentukan alasan berdasarkan Jam
       if (hour < 7) dynamicReason = "Traffic Pagi (Sekolah/Pasar)";
       else if (hour >= 11 && hour <= 13) dynamicReason = "Jam Makan Siang";
       else if (hour >= 16 && hour <= 19) dynamicReason = "Golden Hour (Bubaran)";
       else if (hour > 19) dynamicReason = "Zona Malam/Santai";
       else dynamicReason = "Standby Area Strategis";
 
-      // Logika Prioritas Radius
       if (dist <= 3) {
           priority = 'TINGGI';
           dynamicReason += " (Sangat Dekat)";
@@ -72,7 +72,6 @@ export const findSmartSpots = async (userLat: number, userLng: number): Promise<
           dynamicReason = "Cukup jauh, ambil jika searah";
       }
 
-      // Boost priority jika tipe lokasi sangat relevan dengan jam
       if (hour >= 6 && hour <= 7 && loc.type === 'SEKOLAH') priority = 'TINGGI';
       if (hour >= 11 && hour <= 13 && loc.type === 'FOOD') priority = 'TINGGI';
       if (hour >= 17 && hour <= 20 && loc.type === 'MALL') priority = 'TINGGI';
@@ -89,15 +88,13 @@ export const findSmartSpots = async (userLat: number, userLng: number): Promise<
       };
   });
 
-  // 3. SORTING FINAL
-  // Urutkan: Priority Tinggi -> Jarak Terdekat
   return scoredSpots.sort((a, b) => {
       const priorityScore = { 'TINGGI': 1, 'SEDANG': 2, 'RENDAH': 3 };
       if (priorityScore[a.priority] !== priorityScore[b.priority]) {
           return priorityScore[a.priority] - priorityScore[b.priority];
       }
       return a.distanceValue - b.distanceValue;
-  }).slice(0, 5); // Ambil 5 terbaik
+  }).slice(0, 5); 
 };
 
 // --- LOGIC 2: PERFORMANCE GRADING ---
@@ -105,11 +102,11 @@ export const calculatePerformanceGrade = (orders: number, target: number): Perfo
     if (target === 0) return 'C';
     const percentage = (orders / target) * 100;
 
-    if (percentage >= 120) return 'S'; // Super
-    if (percentage >= 100) return 'A'; // Excellent
-    if (percentage >= 75) return 'B'; // Good
-    if (percentage >= 50) return 'C'; // Average
-    return 'D'; // Low
+    if (percentage >= 120) return 'S'; 
+    if (percentage >= 100) return 'A'; 
+    if (percentage >= 75) return 'B'; 
+    if (percentage >= 50) return 'C'; 
+    return 'D'; 
 };
 
 // --- LOGIC 3: VEHICLE HEALTH ESTIMATOR ---
@@ -123,7 +120,7 @@ export const calculateVehicleHealth = (totalLifetimeOrders: number): VehicleHeal
     
     return {
         oilLife: healthPercent,
-        tireCondition: Math.max(0, 100 - Math.round(totalLifetimeOrders / 50)), // Ban habis tiap 5000 order (kasar)
+        tireCondition: Math.max(0, 100 - Math.round(totalLifetimeOrders / 50)), 
         nextServiceIn: remainingOrders
     };
 };
@@ -133,7 +130,7 @@ export const getSmartStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENTA
 };
 
 export const getAnyepDiagnosis = async (lat: number, lng: number): Promise<string> => {
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600)); // Reduced from 800ms
     const now = new Date();
     const hour = now.getHours();
 

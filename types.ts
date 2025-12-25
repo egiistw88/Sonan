@@ -6,6 +6,8 @@ export enum TransactionType {
 
 export type TransactionCategory = 'RIDE' | 'FOOD' | 'DELIVERY' | 'SHOP' | 'OTHER';
 
+export type PaymentMethod = 'CASH' | 'WALLET';
+
 export interface Transaction {
   id: string;
   amount: number;
@@ -14,11 +16,12 @@ export interface Transaction {
   description: string;
   timestamp: number;
   isOrder: boolean; 
+  paymentMethod: PaymentMethod; // New field for accuracy
   coords?: {
     lat: number;
     lng: number;
   };
-  deletedAt?: number | null; // Added for Soft Delete strategy
+  deletedAt?: number | null;
 }
 
 export interface WeatherData {
@@ -66,3 +69,10 @@ export interface VehicleHealth {
 }
 
 export type PerformanceGrade = 'S' | 'A' | 'B' | 'C' | 'D';
+
+export interface UserProfile {
+    uid: string;
+    displayName: string | null;
+    email: string | null;
+    photoURL: string | null;
+}

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, memo } from 'react';
 import { WeatherData } from '../types';
-import { SonanLogo } from './Logo';
+import { useAppStore } from '../context/GlobalState';
 
 const LiveClock = () => {
   const [time, setTime] = useState(new Date());
@@ -28,24 +28,52 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = memo(({ weather, onRefreshWeather }) => {
+  const { state } = useAppStore();
+  const { isSyncing, user } = state;
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+      const handleStatusChange = () => setIsOnline(navigator.onLine);
+      window.addEventListener('online', handleStatusChange);
+      window.addEventListener('offline', handleStatusChange);
+      return () => {
+          window.removeEventListener('online', handleStatusChange);
+          window.removeEventListener('offline', handleStatusChange);
+      };
+  }, []);
+
   return (
     <header className="bg-slate-900 pt-safe px-6 pb-6 rounded-b-[2rem] shadow-xl border-b border-slate-800 relative z-30">
         <div className="flex justify-between items-center">
-            {/* Left: Weather Compact */}
-            <button 
-                onClick={onRefreshWeather}
-                className="flex items-center gap-3 active:scale-95 transition-transform"
-            >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl shadow-inner">
+            {/* Left: Weather & Connection Status */}
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={onRefreshWeather}
+                    className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl shadow-inner active:scale-95 transition-transform"
+                >
                     {weather.loading ? '⏳' : weather.condition.toLowerCase().includes('hujan') ? '🌧️' : '🌥️'}
-                </div>
+                </button>
                 <div>
                     <p className="text-xl font-bold text-white leading-none">{weather.temp}</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase max-w-[80px] truncate">
-                        {weather.locationName.split(',')[0]}
-                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        {/* Sync/Online Indicator */}
+                        {user ? (
+                            isSyncing ? (
+                                <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping" title="Syncing..."></span>
+                            ) : isOnline ? (
+                                <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]" title="Online & Synced"></span>
+                            ) : (
+                                <span className="w-2 h-2 rounded-full bg-slate-500 border border-slate-400" title="Offline Mode"></span>
+                            )
+                        ) : (
+                            <span className="w-2 h-2 rounded-full bg-slate-600" title="Local Mode"></span>
+                        )}
+                        <p className="text-[10px] text-slate-500 font-bold uppercase max-w-[80px] truncate">
+                            {weather.locationName.split(',')[0]}
+                        </p>
+                    </div>
                 </div>
-            </button>
+            </div>
 
             {/* Right: Clock */}
             <LiveClock />
