@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: 'injectManifest', 
-      srcDir: '.', // CHANGED: Point to root directory
+      srcDir: 'src', 
       filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
