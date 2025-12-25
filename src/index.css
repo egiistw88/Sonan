@@ -3,7 +3,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #0f172a; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
@@ -21,7 +20,6 @@ body {
 
 input, textarea { -webkit-user-select: text; user-select: text; }
 
-/* Custom Animations */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes slideDown { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
@@ -36,14 +34,12 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .animate-spin-slow { animation: spinSlow 3s linear infinite; }
 .animate-shake { animation: shake 0.3s ease-in-out; }
 
-/* Utilities */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .pt-safe { padding-top: env(safe-area-inset-top); }
 .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Leaflet Overrides */
 .leaflet-container { background: #0f172a !important; }
 .custom-marker-pin {
    display: flex;

@@ -22,7 +22,6 @@ const PAGE_SIZE = 10;
 export const HistorySpots: React.FC<HistorySpotsProps> = memo(({ transactions, onDelete }) => {
   const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
   
-  // Reset pagination if transactions change significantly (e.g. filter/sort)
   useEffect(() => {
     setDisplayCount(PAGE_SIZE);
   }, [transactions.length]);
@@ -58,7 +57,6 @@ export const HistorySpots: React.FC<HistorySpotsProps> = memo(({ transactions, o
                     <div className="flex gap-3">
                     <div className={`mt-1 w-1.5 h-full absolute left-0 top-0 bottom-0 ${tx.type === TransactionType.INCOME ? 'bg-green-500' : 'bg-red-500'}`}></div>
                     
-                    {/* Category Icon */}
                     <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-lg shrink-0 border border-slate-700">
                         {tx.type === TransactionType.INCOME ? getCategoryIcon(tx.category) : '💸'}
                     </div>
@@ -93,7 +91,6 @@ export const HistorySpots: React.FC<HistorySpotsProps> = memo(({ transactions, o
                     </div>
                 </div>
 
-                {/* Action Area for Income with Coordinates */}
                 {tx.type === TransactionType.INCOME && tx.coords && (
                     <div className="mt-3 pt-3 border-t border-slate-700/50 flex justify-end">
                     <button 
