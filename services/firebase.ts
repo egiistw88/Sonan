@@ -24,16 +24,14 @@ import {
 import { Transaction, DailyTargets } from "../types";
 
 // --- KONFIGURASI FIREBASE ---
-// PENTING: Ganti nilai-nilai ini dengan config dari Firebase Console Anda
-// Pastikan variabel environment sudah di-set di Vercel jika menggunakan process.env
-// Atau hardcode untuk testing sementara (namun amankan key Anda)
 const firebaseConfig = {
-  apiKey: "ISI_API_KEY_ANDA_DISINI",
-  authDomain: "ISI_PROJECT_ID.firebaseapp.com",
-  projectId: "ISI_PROJECT_ID",
-  storageBucket: "ISI_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "ISI_SENDER_ID",
-  appId: "ISI_APP_ID"
+  apiKey: "AIzaSyBlqJFn0fxhOqSI3-56EdkcgRv76VTazpo",
+  authDomain: "sonan-sobat-jalanan.firebaseapp.com",
+  projectId: "sonan-sobat-jalanan",
+  storageBucket: "sonan-sobat-jalanan.firebasestorage.app",
+  messagingSenderId: "696194743528",
+  appId: "1:696194743528:web:a5cbf6a92432f0b7229d5d",
+  measurementId: "G-HLKM9FSTTX"
 };
 
 // Initialize Firebase
