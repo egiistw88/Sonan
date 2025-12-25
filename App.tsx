@@ -3,15 +3,17 @@ import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { AppProvider, useAppStore } from './context/GlobalState';
 import { TransactionForm } from './components/TransactionForm';
 import { BottomNav } from './components/BottomNav';
-import { DashboardView } from './components/DashboardView'; // Eager load Dashboard
+import { DashboardView } from './components/DashboardView';
 import { DailyMotivation } from './components/DailyMotivation';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { LoginScreen } from './components/LoginScreen'; // New Import
 import { Toast } from './components/Toast';
 import { AnyepDoctor } from './components/AnyepDoctor';
 import { TransactionType, TransactionCategory, WeatherData, PaymentMethod } from './types';
 import { getDailyMotivation } from './services/smartService';
 import { speakStats } from './services/audioService';
 import { useGeolocation } from './hooks/useGeolocation';
+import { subscribeToAuth } from './services/firebase'; // Updated import
 
 // --- LAZY LOADED COMPONENTS ---
 const RadarView = React.lazy(() => import('./components/RadarView').then(module => ({ default: module.RadarView })));
@@ -21,7 +23,7 @@ const StrategyView = React.lazy(() => import('./components/StrategyView').then(m
 const LoadingScreen = () => (
   <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
     <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Memuat Modul...</p>
+    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Memuat Data Sonan...</p>
   </div>
 );
 
@@ -32,9 +34,13 @@ const AppContent: React.FC = () => {
   const [showMotivation, setShowMotivation] = useState(false); 
   const [motivationMessage, setMotivationMessage] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
+  
+  // Auth & Flow State
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [skippedLogin, setSkippedLogin] = useState(false);
 
   const { state, activeTransactions, handleCloudAction } = useAppStore();
-  const { targets, isOnboardingDone, isSyncing } = state;
+  const { targets, isOnboardingDone, isSyncing, user } = state;
 
   const { coords: userCoords, getLocation: getGpsLocation } = useGeolocation();
 
@@ -47,16 +53,26 @@ const AppContent: React.FC = () => {
     loading: false
   });
 
+  // --- AUTH CHECKER ---
+  useEffect(() => {
+    // Wait for Firebase to tell us if there is a user
+    const unsubscribe = subscribeToAuth(() => {
+        setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // --- INIT LOGIC ---
   useEffect(() => {
-    getGpsLocation();
-    
-    if (isOnboardingDone) {
-        const msg = getDailyMotivation();
-        setMotivationMessage(msg);
-        setTimeout(() => setShowMotivation(true), 1000);
+    if (isAuthReady && (user || skippedLogin)) {
+        getGpsLocation();
+        if (isOnboardingDone) {
+            const msg = getDailyMotivation();
+            setMotivationMessage(msg);
+            setTimeout(() => setShowMotivation(true), 1000);
+        }
     }
-  }, [getGpsLocation, isOnboardingDone]);
+  }, [getGpsLocation, isOnboardingDone, isAuthReady, user, skippedLogin]);
 
   // --- ACTIONS ---
   const handleFinishOnboarding = (newTargets: any) => {
@@ -114,22 +130,18 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // --- STATS CALCULATION (SPEED & ACCURACY OPTIMIZED) ---
+  // --- STATS CALCULATION ---
   const stats = useMemo(() => {
-    // Total Revenue (Gross) - Tunai & Non Tunai
     const revenue = activeTransactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + t.amount, 0);
     
-    // Total Expenses
     const expenses = activeTransactions
       .filter(t => t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const orders = activeTransactions.filter(t => t.isOrder).length;
     
-    // REAL CASH CALCULATION (Accuracy Logic)
-    // Cash In Hand = (Income CASH) - (Expense CASH)
     const cashIncome = activeTransactions
         .filter(t => t.type === TransactionType.INCOME && (!t.paymentMethod || t.paymentMethod === 'CASH'))
         .reduce((sum, t) => sum + t.amount, 0);
@@ -139,16 +151,10 @@ const AppContent: React.FC = () => {
         .reduce((sum, t) => sum + t.amount, 0);
 
     const realCash = cashIncome - cashExpense;
-
-    // Budgeting Logic
     const appBalance = Math.floor(revenue * 0.15); 
     const gasFundBudget = Math.floor(revenue * 0.20);      
     const serviceFund = Math.floor(revenue * 0.05);  
     const dailyInstallment = targets.dailyInstallment || 0;
-    
-    // Net Profit calculation (Revenue - Obligations)
-    const totalObligations = appBalance + serviceFund + dailyInstallment + (expenses - cashExpense); // Adjust logic if needed
-    // Simplified Clean Profit: Real Money Left after daily obligations simulation
     const cleanProfit = revenue - expenses - dailyInstallment;
     
     return { 
@@ -163,6 +169,19 @@ const AppContent: React.FC = () => {
       setToast({ msg: '🔊 Membacakan Laporan...', type: 'info' });
   };
 
+  // --- RENDER FLOW LOGIC ---
+  
+  // 1. Loading Auth State
+  if (!isAuthReady) {
+      return <LoadingScreen />;
+  }
+
+  // 2. Login Screen (First Time)
+  if (!user && !skippedLogin) {
+      return <LoginScreen onSkip={() => setSkippedLogin(true)} />;
+  }
+
+  // 3. Main App Layout
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-yellow-500 selection:text-black overflow-hidden relative">
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -173,6 +192,7 @@ const AppContent: React.FC = () => {
       <div className="relative z-10">
         {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
         
+        {/* Onboarding Wizard only if logged in (or skipped) but not done yet */}
         {!isOnboardingDone && <OnboardingWizard onFinish={handleFinishOnboarding} />}
 
         {showMotivation && isOnboardingDone && (
@@ -197,7 +217,7 @@ const AppContent: React.FC = () => {
                   onResetData={handleResetData}
                   onOpenAnyepDoctor={() => setShowAnyepDoctor(true)}
                   onVoiceReport={handleVoiceReport}
-                  isSyncing={isSyncing} // Pass sync status
+                  isSyncing={isSyncing} 
                 />
               );
             case 'radar':

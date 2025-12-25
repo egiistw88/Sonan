@@ -38,9 +38,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
 
-// Enable Offline Persistence (Agar data aman saat sinyal hilang)
+// Force account selection
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Enable Offline Persistence
 try {
     enableIndexedDbPersistence(db).catch((err: any) => {
         if (err.code == 'failed-precondition') {
@@ -56,10 +61,12 @@ try {
 // --- AUTH SERVICE ---
 export const loginWithGoogle = async () => {
   try {
+    console.log("Attempting Google Sign In...");
     const result = await signInWithPopup(auth, provider);
+    console.log("Login Success:", result.user.email);
     return result.user;
-  } catch (error) {
-    console.error("Login failed", error);
+  } catch (error: any) {
+    console.error("Login failed detailed:", error);
     throw error;
   }
 };
@@ -105,7 +112,6 @@ export const subscribeToTargets = (uid: string, callback: (targets: DailyTargets
 };
 
 export const addTransactionToCloud = async (uid: string, tx: Transaction) => {
-    // Gunakan setDoc dengan ID yang kita generate sendiri (timestamp based) agar konsisten
     await setDoc(doc(db, "users", uid, "transactions", tx.id), tx);
 };
 
