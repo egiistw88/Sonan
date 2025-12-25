@@ -8,8 +8,6 @@ interface RadarViewProps {
   transactions: Transaction[];
 }
 
-declare const L: any; // Leaflet global type definition for this environment
-
 export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   // Use startWatching for Radar View to get continuous updates
   const { coords, loading: gpsLoading, error: gpsError, startWatching, stopWatching } = useGeolocation();
@@ -17,63 +15,70 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   const [activeMode, setActiveMode] = useState<'AI' | 'HISTORY'>('AI');
   const [spots, setSpots] = useState<GacorSpot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<GacorSpot | null>(null);
-  
-  // STATE PENTING: Mengontrol apakah peta mengikuti user atau bebas digeser
   const [isFollowing, setIsFollowing] = useState(true); 
   
   const mapRef = useRef<any>(null); 
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  
-  // Leaflet Layer References
   const userMarkerRef = useRef<any>(null);
   const accuracyCircleRef = useRef<any>(null);
   const spotMarkersRef = useRef<any[]>([]); 
 
   // --- 1. Initialize Map (Hanya Sekali) ---
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+    // Safety check for map container
+    if (!mapContainerRef.current) return;
+    // Prevent double initialization
+    if (mapRef.current) return;
+    
+    // Check if Leaflet is loaded
+    const L = (window as any).L;
+    if (!L) {
+        console.error("Leaflet not loaded");
+        return;
+    }
 
     console.log("Initializing Map...");
 
-    // Initialize map 
-    const map = L.map(mapContainerRef.current, {
-        zoomControl: false,
-        attributionControl: false,
-        zoomAnimation: true,
-        fadeAnimation: true,
-        markerZoomAnimation: true
-    }).setView([-6.9175, 107.6191], 13); // Default Bandung
+    try {
+        const map = L.map(mapContainerRef.current, {
+            zoomControl: false,
+            attributionControl: false,
+            zoomAnimation: true,
+            fadeAnimation: true,
+            markerZoomAnimation: true
+        }).setView([-6.9175, 107.6191], 13); // Default Bandung
 
-    // Tile Layer: Dark Mode
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20,
-        subdomains: 'abcd'
-    }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20,
+            subdomains: 'abcd'
+        }).addTo(map);
 
-    // --- SOLUSI MAP DRIFTING/SULIT DIGUNAKAN ---
-    // Matikan auto-follow begitu user menyentuh peta untuk geser/zoom
-    const disableFollow = () => {
-        if (isFollowing) {
-            console.log("User interacted: Disabling Auto-Follow");
-            setIsFollowing(false);
-        }
-    };
+        // Interaction Handlers to disable auto-follow
+        const disableFollow = () => {
+             // We use a ref-like check or state setter wrapper to avoid stale closure if needed, 
+             // but here just setting state is fine as it triggers re-render 
+             // and the effect dealing with isFollowing will pick it up.
+             // However, inside this callback `isFollowing` might be stale.
+             // It's better to just set it to false without checking.
+             setIsFollowing(false);
+        };
 
-    map.on('dragstart', disableFollow);
-    map.on('zoomstart', disableFollow);
-    map.on('mousedown', disableFollow);
-    map.on('touchstart', disableFollow);
+        map.on('dragstart', disableFollow);
+        map.on('zoomstart', disableFollow);
+        map.on('mousedown', disableFollow);
+        map.on('touchstart', disableFollow);
 
-    mapRef.current = map;
+        mapRef.current = map;
 
-    // --- SOLUSI MAP BLANK ---
-    // Terkadang container belum siap render. Kita paksa update size setelah mount.
-    setTimeout(() => {
-        map.invalidateSize();
-        console.log("Map size invalidated (Fix Blank Screen)");
-    }, 200);
+        // Force resize to prevent grey box
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 500);
+    } catch (e) {
+        console.error("Map Init Error:", e);
+    }
 
-    // Start Real-time Tracking
+    // Start GPS
     startWatching();
 
     return () => {
@@ -83,20 +88,20 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             mapRef.current = null;
         }
     };
-  }, []);
+  }, []); // Empty dependency array = runs once on mount
 
-  // --- 2. Handle User Location Updates (Real-time) ---
+  // --- 2. Handle Updates ---
   useEffect(() => {
-    if (!coords || !mapRef.current) return;
+    const L = (window as any).L;
+    if (!coords || !mapRef.current || !L) return;
 
     const { lat, lng, accuracy, heading } = coords;
 
-    // A. Update Marker Posisi User (Selalu Update Marker, tidak peduli isFollowing)
+    // Update User Marker
     if (userMarkerRef.current) {
-        // Smoothly update marker position
         userMarkerRef.current.setLatLng([lat, lng]);
         
-        // Update Heading/Direction Arrow if available
+        // Update Arrow Rotation
         if (heading !== null && heading !== undefined) {
             const iconElement = userMarkerRef.current.getElement();
             if (iconElement) {
@@ -107,7 +112,6 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             }
         }
     } else {
-        // Buat Marker User Baru
         const userIcon = L.divIcon({
             className: 'custom-user-marker',
             html: `<div class="relative w-8 h-8 flex items-center justify-center">
@@ -121,7 +125,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         userMarkerRef.current = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 1000 }).addTo(mapRef.current);
     }
 
-    // B. Update Accuracy Circle
+    // Update Accuracy Circle
     if (accuracyCircleRef.current) {
         accuracyCircleRef.current.setLatLng([lat, lng]);
         accuracyCircleRef.current.setRadius(accuracy || 50);
@@ -136,34 +140,27 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
         }).addTo(mapRef.current);
     }
 
-    // C. Auto-Center (Logic Improved)
-    // Hanya gerakkan kamera jika isFollowing TRUE
+    // Auto-Center logic
     if (isFollowing) {
-        // Gunakan panTo untuk pergerakan kecil, flyTo untuk pergerakan jauh (awal load)
-        // Ini mencegah efek "mabuk" jika GPS jitter sedikit
         mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
 
   }, [coords, isFollowing]);
 
-  // --- 3. Fetch Spots Logic ---
+  // --- 3. Fetch & Render Spots ---
   useEffect(() => {
-    // Fetch spots jika coords berubah signifikan atau mode berubah
-    // Debounce sedikit agar tidak spam function findSmartSpots
     if (coords) {
         const timer = setTimeout(() => fetchSpots(), 500);
         return () => clearTimeout(timer);
     }
   }, [coords?.lat, coords?.lng, activeMode]);
 
-  // --- 4. Render Spots ---
   useEffect(() => {
      renderSpotMarkers();
   }, [spots]);
 
   const fetchSpots = async () => {
       if (!coords) return;
-
       let results: GacorSpot[] = [];
 
       if (activeMode === 'AI') {
@@ -172,18 +169,16 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
           // History Logic
           const now = new Date();
           const currentHour = now.getHours();
-          
           const relevantTx = transactions.filter(tx => {
             if (tx.type !== TransactionType.INCOME || !tx.coords) return false;
             const txDate = new Date(tx.timestamp);
-            const txHour = txDate.getHours();
-            return Math.abs(txHour - currentHour) <= 3; 
+            return Math.abs(txDate.getHours() - currentHour) <= 3; 
           });
 
           results = relevantTx.slice(0, 15).map(tx => ({
               name: tx.description,
               type: 'LANGGANAN',
-              reason: `Orderanmu jam segini`,
+              reason: `Riwayat orderan jam segini`,
               distance: '0km',
               distanceValue: 0,
               coords: tx.coords,
@@ -195,9 +190,9 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
   };
 
   const renderSpotMarkers = () => {
-      if (!mapRef.current) return;
+      const L = (window as any).L;
+      if (!mapRef.current || !L) return;
 
-      // Clear old markers
       spotMarkersRef.current.forEach(m => mapRef.current.removeLayer(m));
       spotMarkersRef.current = [];
 
@@ -231,7 +226,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
             .on('click', () => {
                 triggerHaptic('light');
                 setSelectedSpot(spot);
-                setIsFollowing(false); // Stop following on click
+                setIsFollowing(false);
                 mapRef.current.flyTo([spot.coords!.lat - 0.003, spot.coords!.lng], 15, { duration: 0.5 });
             });
           
@@ -247,7 +242,7 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
 
   const handleRecenter = () => {
       triggerHaptic('medium');
-      setIsFollowing(true); // Re-enable following
+      setIsFollowing(true);
       if (coords && mapRef.current) {
           mapRef.current.flyTo([coords.lat, coords.lng], 16, { duration: 1 });
       } else {
@@ -255,45 +250,39 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
       }
   };
 
-  // --- LOADING STATE ---
-  if (!coords && gpsLoading) {
-      return (
-          <div className="flex flex-col items-center justify-center h-[calc(100vh-84px)] bg-slate-950 text-slate-400">
-              <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="text-sm font-bold animate-pulse">Mencari Koordinat Satelit...</p>
-              <p className="text-xs text-slate-600 mt-2">Pastikan GPS Aktif & Berada di Luar Ruangan</p>
-          </div>
-      );
-  }
-
-  // --- GPS ERROR STATE ---
-  if (!coords && gpsError) {
-      return (
-        <div className="flex flex-col items-center justify-center h-[calc(100vh-84px)] bg-slate-950 text-red-400 p-6 text-center">
-            <span className="text-4xl mb-4">📡❌</span>
-            <h3 className="text-lg font-bold text-white mb-2">Sinyal GPS Hilang</h3>
-            <p className="text-sm mb-6">{gpsError}</p>
-            <button 
-                onClick={() => window.location.reload()}
-                className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold"
-            >
-                Muat Ulang Aplikasi
-            </button>
-        </div>
-      );
-  }
-
-  // --- RENDER UTAMA ---
   return (
     <div className="relative h-[calc(100vh-84px)] w-full bg-slate-950 overflow-hidden">
         
-        {/* Map Container - Pastikan W-full H-full */}
+        {/* MAP CONTAINER (ALWAYS RENDERED) */}
         <div ref={mapContainerRef} className="absolute inset-0 z-0 h-full w-full bg-slate-900"></div>
+
+        {/* --- LOADING OVERLAY --- */}
+        {(!coords && gpsLoading) && (
+             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm text-slate-400">
+                <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-sm font-bold animate-pulse">Mencari Koordinat Satelit...</p>
+                <p className="text-xs text-slate-600 mt-2">Pastikan GPS Aktif & Berada di Luar Ruangan</p>
+             </div>
+        )}
+
+        {/* --- ERROR OVERLAY --- */}
+        {(!coords && gpsError) && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur text-red-400 p-6 text-center">
+                <span className="text-4xl mb-4">📡❌</span>
+                <h3 className="text-lg font-bold text-white mb-2">Sinyal GPS Hilang</h3>
+                <p className="text-sm mb-6">{gpsError}</p>
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold"
+                >
+                    Muat Ulang Aplikasi
+                </button>
+            </div>
+        )}
 
         {/* Overlay: Top Controls */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-safe z-10 pointer-events-none">
             <div className="flex justify-between items-start">
-                {/* Switcher Mode */}
                 <div className="bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700 shadow-xl pointer-events-auto flex gap-1">
                     <button 
                         onClick={() => { triggerHaptic('light'); setActiveMode('AI'); setSelectedSpot(null); }}
@@ -310,7 +299,6 @@ export const RadarView: React.FC<RadarViewProps> = ({ transactions }) => {
                 </div>
 
                 <div className="flex flex-col gap-2 pointer-events-auto">
-                    {/* Recenter / Lock Button */}
                     <button 
                         onClick={handleRecenter}
                         className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-xl transition-all active:scale-95 ${
