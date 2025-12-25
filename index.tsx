@@ -5,6 +5,8 @@ import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 // Register SW logic
 import { registerSW } from 'virtual:pwa-register';
+// Import Tailwind CSS
+import './index.css';
 
 // Interval check for updates every hour
 const updateSW = registerSW({

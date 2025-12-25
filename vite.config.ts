@@ -8,8 +8,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      strategies: 'injectManifest', // Kita pakai custom SW source
-      srcDir: 'src',
+      strategies: 'injectManifest', 
+      srcDir: '.', // CHANGED: Point to root directory
       filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
@@ -23,7 +23,7 @@ export default defineConfig({
         orientation: 'portrait',
         icons: [
           {
-            src: 'pwa-192x192.png', // Asset ini idealnya ada di folder public
+            src: 'pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png'
           },
@@ -35,7 +35,7 @@ export default defineConfig({
         ]
       },
       devOptions: {
-        enabled: true, // Aktifkan PWA di mode dev untuk testing
+        enabled: true,
         type: 'module',
       },
     })
