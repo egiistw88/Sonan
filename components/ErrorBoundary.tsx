@@ -38,7 +38,8 @@ export class ErrorBoundary extends Component<Props, State> {
               Mohon maaf, terjadi kesalahan teknis. Tenang, data Anda aman. Silakan coba muat ulang.
             </p>
             
-            {process.env.NODE_ENV === 'development' && (
+            {/* Menggunakan import.meta.env.DEV untuk Vite - Cast to any to avoid TS error */}
+            {(import.meta as any).env?.DEV && (
                 <div className="bg-red-900/20 text-red-400 p-2 text-xs font-mono text-left mb-4 rounded overflow-auto max-h-32">
                     {this.state.error?.toString()}
                 </div>
@@ -55,6 +56,6 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    return (this as any).props.children;
   }
 }

@@ -11,20 +11,22 @@ import {
 import { 
   getFirestore, 
   collection, 
-  addDoc, 
   updateDoc, 
   doc, 
   query, 
-  where, 
   onSnapshot,
   setDoc,
   enableIndexedDbPersistence,
-  orderBy
+  orderBy,
+  QuerySnapshot,
+  DocumentSnapshot
 } from "firebase/firestore";
 import { Transaction, DailyTargets } from "../types";
 
 // --- KONFIGURASI FIREBASE ---
 // PENTING: Ganti nilai-nilai ini dengan config dari Firebase Console Anda
+// Pastikan variabel environment sudah di-set di Vercel jika menggunakan process.env
+// Atau hardcode untuk testing sementara (namun amankan key Anda)
 const firebaseConfig = {
   apiKey: "ISI_API_KEY_ANDA_DISINI",
   authDomain: "ISI_PROJECT_ID.firebaseapp.com",
@@ -42,7 +44,7 @@ const provider = new GoogleAuthProvider();
 
 // Enable Offline Persistence (Agar data aman saat sinyal hilang)
 try {
-    enableIndexedDbPersistence(db).catch((err) => {
+    enableIndexedDbPersistence(db).catch((err: any) => {
         if (err.code == 'failed-precondition') {
             console.log('Persistence failed: Multiple tabs open');
         } else if (err.code == 'unimplemented') {
@@ -87,7 +89,7 @@ export const saveUserProfile = async (uid: string, targets: DailyTargets) => {
 
 export const subscribeToTransactions = (uid: string, callback: (txs: Transaction[]) => void) => {
     const q = query(collection(db, "users", uid, "transactions"), orderBy("timestamp", "desc"));
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(q, (snapshot: QuerySnapshot) => {
         const txs: Transaction[] = [];
         snapshot.forEach((doc) => {
             txs.push({ ...doc.data(), id: doc.id } as Transaction);
@@ -97,9 +99,9 @@ export const subscribeToTransactions = (uid: string, callback: (txs: Transaction
 };
 
 export const subscribeToTargets = (uid: string, callback: (targets: DailyTargets) => void) => {
-    return onSnapshot(doc(db, "users", uid), (doc) => {
-        if (doc.exists() && doc.data().targets) {
-            callback(doc.data().targets as DailyTargets);
+    return onSnapshot(doc(db, "users", uid), (docSnap: DocumentSnapshot) => {
+        if (docSnap.exists() && docSnap.data()?.targets) {
+            callback(docSnap.data()?.targets as DailyTargets);
         }
     });
 };
