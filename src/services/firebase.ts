@@ -6,7 +6,8 @@ import {
   signInWithPopup, 
   signOut,
   onAuthStateChanged,
-  User
+  User,
+  browserPopupRedirectResolver
 } from "firebase/auth";
 import { 
   getFirestore, 
@@ -23,6 +24,7 @@ import {
 } from "firebase/firestore";
 import { Transaction, DailyTargets } from "../types";
 
+// --- KONFIGURASI FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyBlqJFn0fxhOqSI3-56EdkcgRv76VTazpo",
   authDomain: "sonan-sobat-jalanan.firebaseapp.com",
@@ -33,15 +35,19 @@ const firebaseConfig = {
   measurementId: "G-HLKM9FSTTX"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+// Using browserPopupRedirectResolver helps with some mobile browser restrictions
+const auth = getAuth(app); 
 const db = getFirestore(app);
 
+// Force account selection every time to avoid getting stuck on wrong account
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({
   prompt: 'select_account'
 });
 
+// Enable Offline Persistence
 try {
     enableIndexedDbPersistence(db).catch((err: any) => {
         if (err.code == 'failed-precondition') {
@@ -54,9 +60,14 @@ try {
     console.log("Persistence init error", e);
 }
 
+// --- AUTH SERVICE ---
 export const loginWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, provider);
+    console.log("Attempting Google Sign In...");
+    // Using standard popup. On some mobile environments, Redirect might be preferred, 
+    // but Popup is generally better for SPAs to maintain state without page reload logic.
+    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    console.log("Login Success:", result.user.email);
     return result.user;
   } catch (error: any) {
     console.error("Login failed detailed:", error);
@@ -76,6 +87,7 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
   return onAuthStateChanged(auth, callback);
 };
 
+// --- DATA SERVICE ---
 export const saveUserProfile = async (uid: string, targets: DailyTargets) => {
     try {
         await setDoc(doc(db, "users", uid), { targets }, { merge: true });
