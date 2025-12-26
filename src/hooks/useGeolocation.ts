@@ -33,38 +33,55 @@ export const useGeolocation = () => {
     };
   }, []);
 
+  const getErrorMsg = (err: GeolocationPositionError) => {
+      switch(err.code) {
+          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Aktifkan GPS.";
+          case err.POSITION_UNAVAILABLE: return "Sinyal GPS hilang.";
+          case err.TIMEOUT: return "Koneksi GPS lambat.";
+          default: return "Gagal memuat lokasi.";
+      }
+  };
+
+  const handleSuccess = (pos: GeolocationPosition) => {
+      if (!isMounted.current) return;
+      setState({
+          coords: {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            heading: pos.coords.heading,
+            speed: pos.coords.speed
+          },
+          loading: false,
+          error: null,
+      });
+  };
+
+  const handleError = (err: GeolocationPositionError) => {
+      if (!isMounted.current) return;
+      // Jangan hapus coords lama jika error timeout (agar peta tidak blank)
+      setState(prev => ({ 
+          ...prev, 
+          loading: false, 
+          error: getErrorMsg(err) 
+      }));
+  };
+
+  // Settingan GPS untuk Driver (Agresif tapi Akurat)
+  const geoOptions = { 
+      enableHighAccuracy: true, 
+      timeout: 10000, 
+      maximumAge: 2000 // Cache hanya 2 detik agar tidak loncat saat bergerak
+  };
+
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setState(prev => ({ ...prev, loading: false, error: 'GPS tidak didukung.' }));
+      setState(prev => ({ ...prev, loading: false, error: 'Perangkat tidak mendukung GPS.' }));
       return;
     }
 
     setState(prev => ({ ...prev, loading: true, error: null }));
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (!isMounted.current) return;
-        setState({
-          coords: {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy
-          },
-          loading: false,
-          error: null,
-        });
-      },
-      (err) => {
-        if (!isMounted.current) return;
-        console.warn("GPS Single Shot Error:", err);
-        setState(prev => ({ ...prev, loading: false, error: getErrorMsg(err) }));
-      },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 10000,           
-        maximumAge: 60000 
-      }
-    );
+    navigator.geolocation.getCurrentPosition(handleSuccess, handleError, geoOptions);
   }, []);
 
   const startWatching = useCallback(() => {
@@ -74,39 +91,7 @@ export const useGeolocation = () => {
 
     setState(prev => ({ ...prev, loading: true, error: null }));
 
-    const options = { 
-      enableHighAccuracy: true, 
-      timeout: 15000, 
-      maximumAge: 30000 
-    };
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (!isMounted.current) return;
-        
-        setState({
-          coords: {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            heading: pos.coords.heading,
-            speed: pos.coords.speed
-          },
-          loading: false, 
-          error: null,
-        });
-      },
-      (err) => {
-        if (!isMounted.current) return;
-        console.warn("GPS Watch Error:", err);
-        setState(prev => ({ 
-            ...prev, 
-            loading: false, 
-            error: getErrorMsg(err) 
-        }));
-      },
-      options
-    );
+    watchIdRef.current = navigator.geolocation.watchPosition(handleSuccess, handleError, geoOptions);
   }, []);
 
   const stopWatching = useCallback(() => {
@@ -115,15 +100,6 @@ export const useGeolocation = () => {
       watchIdRef.current = null;
     }
   }, []);
-
-  const getErrorMsg = (err: GeolocationPositionError) => {
-      switch(err.code) {
-          case err.PERMISSION_DENIED: return "Izin lokasi ditolak. Cek pengaturan HP.";
-          case err.POSITION_UNAVAILABLE: return "Sinyal GPS hilang. Pindah ke area terbuka.";
-          case err.TIMEOUT: return "Koneksi GPS lambat (Timeout).";
-          default: return "Gagal mengambil lokasi.";
-      }
-  };
 
   return { ...state, getLocation, startWatching, stopWatching };
 };

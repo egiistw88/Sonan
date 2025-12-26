@@ -13,9 +13,9 @@ import { TransactionType, TransactionCategory, WeatherData, PaymentMethod } from
 import { getDailyMotivation } from './services/smartService';
 import { speakStats } from './services/audioService';
 import { useGeolocation } from './hooks/useGeolocation';
-import { subscribeToAuth } from './services/firebase'; 
+import { subscribeToAuth, checkRedirectAuth } from './services/firebase'; 
 
-// --- LAZY LOADED COMPONENTS ---
+// Lazy Loading
 const RadarView = React.lazy(() => import('./components/RadarView').then(module => ({ default: module.RadarView })));
 const WalletView = React.lazy(() => import('./components/WalletView').then(module => ({ default: module.WalletView })));
 const StrategyView = React.lazy(() => import('./components/StrategyView').then(module => ({ default: module.StrategyView })));
@@ -35,7 +35,7 @@ const AppContent: React.FC = () => {
   const [motivationMessage, setMotivationMessage] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   
-  // Auth & Flow State
+  // Auth Logic
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [skippedLogin, setSkippedLogin] = useState(false);
 
@@ -44,43 +44,38 @@ const AppContent: React.FC = () => {
 
   const { coords: userCoords, getLocation: getGpsLocation } = useGeolocation();
 
-  // Weather State
-  const [weather] = useState<WeatherData>({
-    locationName: 'Bandung',
-    temp: '24°C',
-    condition: 'Cerah Berawan',
-    advice: 'Siapkan jas hujan (Sedia payung sebelum hujan).',
-    loading: false
-  });
-
-  // --- AUTH CHECKER ---
+  // Initial Check Logic
   useEffect(() => {
-    const unsubscribe = subscribeToAuth(() => {
+    // 1. Cek apakah ini kembalian dari Redirect Google?
+    checkRedirectAuth().then((redirectUser) => {
+        if (redirectUser) {
+            // State user akan diupdate oleh listener subscribeToAuth
+        }
+    });
+
+    // 2. Subscribe auth state normal
+    const unsubscribe = subscribeToAuth((u) => {
         setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
 
-  // --- INIT LOGIC ---
+  // Init Data after Auth
   useEffect(() => {
     if (isAuthReady && (user || skippedLogin)) {
         getGpsLocation();
-        if (isOnboardingDone) {
+        if (isOnboardingDone && !showMotivation && !motivationMessage) {
             const msg = getDailyMotivation();
             setMotivationMessage(msg);
-            setTimeout(() => setShowMotivation(true), 1000);
+            setTimeout(() => setShowMotivation(true), 1500); // Delay sedikit biar tidak tabrakan
         }
     }
   }, [getGpsLocation, isOnboardingDone, isAuthReady, user, skippedLogin]);
 
-  // --- ACTIONS ---
+  // Handlers
   const handleFinishOnboarding = (newTargets: any) => {
       handleCloudAction({ type: 'COMPLETE_ONBOARDING', payload: newTargets });
       setToast({ msg: 'Profil Siap! Cek "SOP Pre-Flight" sekarang!', type: 'success' });
-      
-      const msg = getDailyMotivation();
-      setMotivationMessage(msg);
-      setShowMotivation(true);
   };
 
   const handleUpdateTargets = (newTargets: any) => {
@@ -125,57 +120,24 @@ const AppContent: React.FC = () => {
   const handleDeleteTransaction = (id: string) => {
     if (window.confirm("Yakin ingin menghapus catatan ini?")) {
         handleCloudAction({ type: 'DELETE_TRANSACTION', payload: id });
-        setToast({ msg: 'Data Dihapus (Soft Delete)', type: 'info' });
+        setToast({ msg: 'Data Dihapus', type: 'info' });
     }
   };
 
-  // --- STATS CALCULATION ---
   const stats = useMemo(() => {
-    const revenue = activeTransactions
-      .filter(t => t.type === TransactionType.INCOME)
-      .reduce((sum, t) => sum + t.amount, 0);
-    
-    const expenses = activeTransactions
-      .filter(t => t.type === TransactionType.EXPENSE)
-      .reduce((sum, t) => sum + t.amount, 0);
-
+    const revenue = activeTransactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
+    const expenses = activeTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
     const orders = activeTransactions.filter(t => t.isOrder).length;
-    
-    const cashIncome = activeTransactions
-        .filter(t => t.type === TransactionType.INCOME && (!t.paymentMethod || t.paymentMethod === 'CASH'))
-        .reduce((sum, t) => sum + t.amount, 0);
-        
-    const cashExpense = activeTransactions
-        .filter(t => t.type === TransactionType.EXPENSE && (!t.paymentMethod || t.paymentMethod === 'CASH'))
-        .reduce((sum, t) => sum + t.amount, 0);
-
+    const cashIncome = activeTransactions.filter(t => t.type === TransactionType.INCOME && (!t.paymentMethod || t.paymentMethod === 'CASH')).reduce((sum, t) => sum + t.amount, 0);
+    const cashExpense = activeTransactions.filter(t => t.type === TransactionType.EXPENSE && (!t.paymentMethod || t.paymentMethod === 'CASH')).reduce((sum, t) => sum + t.amount, 0);
     const realCash = cashIncome - cashExpense;
-    const appBalance = Math.floor(revenue * 0.15); 
-    const gasFundBudget = Math.floor(revenue * 0.20);      
-    const serviceFund = Math.floor(revenue * 0.05);  
-    const dailyInstallment = targets.dailyInstallment || 0;
-    const cleanProfit = revenue - expenses - dailyInstallment;
     
-    return { 
-      revenue, expenses, orders, realCash, 
-      gasFundBudget, appBalance, serviceFund, 
-      dailyInstallment, cleanProfit 
-    };
+    return { revenue, expenses, orders, realCash, cleanProfit: revenue - expenses - (targets.dailyInstallment || 0) };
   }, [activeTransactions, targets.dailyInstallment]);
 
-  const handleVoiceReport = () => {
-      speakStats(stats.orders, targets.orders, stats.realCash, "Semangat pejuang keluarga!");
-      setToast({ msg: '🔊 Membacakan Laporan...', type: 'info' });
-  };
-
-  // --- RENDER FLOW LOGIC ---
-  if (!isAuthReady) {
-      return <LoadingScreen />;
-  }
-
-  if (!user && !skippedLogin) {
-      return <LoginScreen onSkip={() => setSkippedLogin(true)} />;
-  }
+  // Views
+  if (!isAuthReady) return <LoadingScreen />;
+  if (!user && !skippedLogin) return <LoginScreen onSkip={() => setSkippedLogin(true)} />;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-yellow-500 selection:text-black overflow-hidden relative">
@@ -200,8 +162,8 @@ const AppContent: React.FC = () => {
             case 'dashboard':
               return (
                 <DashboardView 
-                  weather={weather}
-                  onRefreshWeather={() => setToast({msg: "Cuaca offline (Statik)", type: "info"})}
+                  weather={{temp: '24°C', condition: 'Cerah', locationName: 'Bandung', advice: 'Sedia payung.', loading: false}}
+                  onRefreshWeather={() => setToast({msg: "Cuaca offline", type: "info"})}
                   stats={stats}
                   transactions={activeTransactions}
                   onDelete={handleDeleteTransaction}
@@ -210,34 +172,17 @@ const AppContent: React.FC = () => {
                   onImportData={handleImportData}
                   onResetData={handleResetData}
                   onOpenAnyepDoctor={() => setShowAnyepDoctor(true)}
-                  onVoiceReport={handleVoiceReport}
+                  onVoiceReport={() => speakStats(stats.orders, targets.orders, stats.realCash, "Semangat!")}
                   isSyncing={isSyncing} 
                 />
               );
             case 'radar':
-              return (
-                <Suspense fallback={<LoadingScreen />}>
-                  <RadarView transactions={activeTransactions} />
-                </Suspense>
-              );
+              return <Suspense fallback={<LoadingScreen />}><RadarView transactions={activeTransactions} /></Suspense>;
             case 'wallet':
-              return (
-                 <Suspense fallback={<LoadingScreen />}>
-                  <WalletView 
-                    stats={stats}
-                    transactions={activeTransactions}
-                    onDelete={handleDeleteTransaction}
-                  />
-                </Suspense>
-              );
+              return <Suspense fallback={<LoadingScreen />}><WalletView stats={stats} transactions={activeTransactions} onDelete={handleDeleteTransaction} /></Suspense>;
             case 'strategy':
-              return (
-                <Suspense fallback={<LoadingScreen />}>
-                  <StrategyView />
-                </Suspense>
-              );
-            default:
-              return null;
+              return <Suspense fallback={<LoadingScreen />}><StrategyView /></Suspense>;
+            default: return null;
           }
         })()}
         

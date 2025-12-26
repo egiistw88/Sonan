@@ -4,6 +4,7 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithRedirect, 
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   User
@@ -45,28 +46,35 @@ provider.setCustomParameters({
   prompt: 'select_account'
 });
 
-// Enable Offline Persistence
+// Enable Offline Persistence (Silent Fail)
 try {
-    enableIndexedDbPersistence(db).catch((err: any) => {
-        if (err.code == 'failed-precondition') {
-            console.log('Persistence failed: Multiple tabs open');
-        } else if (err.code == 'unimplemented') {
-            console.log('Persistence not supported by browser');
-        }
-    });
+    enableIndexedDbPersistence(db).catch(() => {});
 } catch (e) {
-    console.log("Persistence init error", e);
+    // Ignore persistence errors
 }
 
 // --- AUTH SERVICE ---
+
+// Fungsi ini harus dipanggil saat App mount untuk mengecek apakah user baru kembali dari Google
+export const checkRedirectAuth = async () => {
+    try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+            console.log("Redirect Login Success:", result.user.email);
+            return result.user;
+        }
+    } catch (error) {
+        console.error("Redirect Error:", error);
+    }
+    return null;
+};
+
 export const loginWithGoogle = async () => {
   try {
-    console.log("Attempting Google Sign In (Redirect)...");
-    // Menggunakan signInWithRedirect yang lebih stabil di mobile
+    console.log("Starting Redirect...");
     await signInWithRedirect(auth, provider);
-    // Tidak ada return di sini karena halaman akan reload/redirect
   } catch (error: any) {
-    console.error("Login failed detailed:", error);
+    console.error("Login Trigger Failed:", error);
     throw error;
   }
 };
@@ -100,6 +108,8 @@ export const subscribeToTransactions = (uid: string, callback: (txs: Transaction
             txs.push({ ...doc.data(), id: doc.id } as Transaction);
         });
         callback(txs);
+    }, (error) => {
+        console.log("Offline mode or permission error", error);
     });
 };
 

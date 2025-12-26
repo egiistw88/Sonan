@@ -2,9 +2,11 @@
 import { GacorSpot, StrategyTip, PerformanceGrade, VehicleHealth } from "../types";
 import { LOCATIONS_DB, STATIC_STRATEGIES, MOTIVATION_QUOTES } from "../data/knowledgeBase";
 
+// --- UTILITY: Haptic Feedback ---
 export const triggerHaptic = (pattern: 'light' | 'medium' | 'heavy' | 'success' | 'error' = 'light') => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
     try {
+        // Cek apakah user sedang berinteraksi agar tidak diblokir browser
         switch (pattern) {
         case 'light': navigator.vibrate(5); break; 
         case 'medium': navigator.vibrate(10); break; 
@@ -12,7 +14,7 @@ export const triggerHaptic = (pattern: 'light' | 'medium' | 'heavy' | 'success' 
         case 'success': navigator.vibrate([10, 30, 10]); break; 
         case 'error': navigator.vibrate([50, 30, 50, 30, 50]); break; 
         }
-    } catch(e) { /* ignore on unsupported devices */ }
+    } catch(e) { /* ignore */ }
   }
 };
 
@@ -25,52 +27,56 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
     Math.sin(dLon / 2) * Math.sin(dLon / 2); 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
-  const d = R * c; 
-  return d; 
+  return R * c; 
 };
 
+// --- LOGIC 1: SMART SPOTS (INSTANT - NO FAKE LATENCY) ---
 export const findSmartSpots = async (userLat: number, userLng: number): Promise<GacorSpot[]> => {
-  await new Promise(r => setTimeout(r, 200));
+  // REMOVED: await new Promise(r => setTimeout(r, 200)); <- Bikin lemot!
 
   const now = new Date();
   const day = now.getDay(); 
   const hour = now.getHours();
   
-  const mappedSpots = LOCATIONS_DB.map(loc => {
-      const dist = getDistance(userLat, userLng, loc.lat, loc.lng);
-      return { ...loc, distanceVal: dist };
-  });
+  // 1. Calculate distances
+  const mappedSpots = LOCATIONS_DB.map(loc => ({
+      ...loc, 
+      distanceVal: getDistance(userLat, userLng, loc.lat, loc.lng)
+  }));
 
-  let relevantSpots = mappedSpots.filter(loc => loc.distanceVal <= 10);
+  // 2. Filter Radius (Max 15km agar mencakup pinggiran kota)
+  let relevantSpots = mappedSpots.filter(loc => loc.distanceVal <= 15);
 
+  // Fallback jika kosong
   if (relevantSpots.length < 3) {
       relevantSpots = mappedSpots.sort((a,b) => a.distanceVal - b.distanceVal).slice(0, 5);
   }
 
+  // 3. Scoring
   const scoredSpots = relevantSpots.map(loc => {
       let priority: 'TINGGI' | 'SEDANG' | 'RENDAH' = 'RENDAH';
       let dynamicReason = loc.notes; 
 
       const isBestHour = loc.bestHours.some(h => Math.abs(h - hour) <= 1);
-      
       const isDayMatch = loc.specificDays ? loc.specificDays.includes(day) : true; 
 
       if (isDayMatch && isBestHour) {
           priority = 'TINGGI';
-          dynamicReason = `🔥 HOTSPOT HARI INI! ${loc.notes}`;
+          dynamicReason = `🔥 SEDANG GACOR! ${loc.notes}`;
       } else if (isDayMatch && !isBestHour) {
           priority = 'SEDANG';
           const firstBest = loc.bestHours[0];
-          if (hour < firstBest) dynamicReason = `Siap-siap untuk jam ${firstBest}:00. ${loc.notes}`;
-          else dynamicReason = `Tadi ramai jam ${firstBest}:00. Coba geser dikit.`;
+          if (hour < firstBest) dynamicReason = `Persiapan jam ${firstBest}:00. ${loc.notes}`;
+          else dynamicReason = `Biasanya ramai jam ${firstBest}:00.`;
       } else if (!isDayMatch && loc.distanceVal < 2) {
           priority = 'RENDAH';
-          dynamicReason = `Biasanya ramai hari ${getDayName(loc.specificDays?.[0])}. Tapi karena dekat, boleh dicoba.`;
+          dynamicReason = `Dekat lokasi Anda. Coba cek siapa tau hoki.`;
       }
 
-      if (loc.distanceVal < 0.5 && isDayMatch) {
+      // Boost jika sangat dekat (< 500m)
+      if (loc.distanceVal < 0.5) {
           priority = 'TINGGI'; 
-          dynamicReason = "SANGAT DEKAT! " + dynamicReason;
+          dynamicReason = "POSISI SANGAT DEKAT! " + dynamicReason;
       }
 
       return {
@@ -85,18 +91,13 @@ export const findSmartSpots = async (userLat: number, userLng: number): Promise<
       };
   });
 
-  let finalSpots = scoredSpots.filter(s => s.priority !== 'RENDAH');
-  if (finalSpots.length < 3) finalSpots = scoredSpots;
-
-  return finalSpots.sort((a, b) => {
-      const pScoreA = a.priority === 'TINGGI' ? 0 : a.priority === 'SEDANG' ? 2 : 4;
-      const pScoreB = b.priority === 'TINGGI' ? 0 : b.priority === 'SEDANG' ? 2 : 4;
-      
-      const totalScoreA = a.distanceValue + pScoreA;
-      const totalScoreB = b.distanceValue + pScoreB;
-
-      return totalScoreA - totalScoreB;
-  }).slice(0, 8); 
+  // 4. Sort: Priority first, then Distance
+  return scoredSpots.sort((a, b) => {
+      const pScore = (p: string) => (p === 'TINGGI' ? 0 : p === 'SEDANG' ? 10 : 20);
+      const scoreA = pScore(a.priority) + a.distanceValue;
+      const scoreB = pScore(b.priority) + b.distanceValue;
+      return scoreA - scoreB;
+  }).slice(0, 10); 
 };
 
 const getDayName = (idx?: number) => {
@@ -108,7 +109,6 @@ const getDayName = (idx?: number) => {
 export const calculatePerformanceGrade = (orders: number, target: number): PerformanceGrade => {
     if (target === 0) return 'C';
     const percentage = (orders / target) * 100;
-
     if (percentage >= 120) return 'S'; 
     if (percentage >= 100) return 'A'; 
     if (percentage >= 75) return 'B'; 
@@ -118,10 +118,8 @@ export const calculatePerformanceGrade = (orders: number, target: number): Perfo
 
 export const calculateVehicleHealth = (totalLifetimeOrders: number): VehicleHealth => {
     const SERVICE_INTERVAL_ORDERS = 400; 
-    
     const ordersSinceService = totalLifetimeOrders % SERVICE_INTERVAL_ORDERS;
     const remainingOrders = SERVICE_INTERVAL_ORDERS - ordersSinceService;
-    
     const healthPercent = Math.max(0, Math.round((remainingOrders / SERVICE_INTERVAL_ORDERS) * 100));
     
     return {
@@ -136,16 +134,15 @@ export const getSmartStrategy = async (category: 'TEKNIS' | 'MARKETING' | 'MENTA
 };
 
 export const getAnyepDiagnosis = async (lat: number, lng: number): Promise<string> => {
-    await new Promise(r => setTimeout(r, 600)); 
-    const now = new Date();
-    const hour = now.getHours();
+    // No latency needed
+    const hour = new Date().getHours();
 
-    if (hour >= 4 && hour <= 7) return "Zona Bahaya Pagi: Hindari Jl. Rajawali/Andir (Pasar Tumpah). Fokus area perumahan timur.";
-    if (hour >= 11 && hour <= 13) return "Jam Istirahat: Geser ke pusat kuliner (Dipatiukur/Lengkong) atau ngetem dekat Masjid Besar.";
-    if (hour >= 16 && hour <= 19) return "Golden Hour: Standby area perkantoran. Jangan lawan arus macet, cari orderan searah 'Pulang'.";
-    if (hour >= 21) return "Mode Malam: Geser ke area hiburan (Lengkong Kecil/Braga) atau standby RS 24 Jam.";
+    if (hour >= 4 && hour <= 7) return "Zona Pagi: Hindari pasar tumpah macet. Geser ke perumahan elit (orang berangkat kerja).";
+    if (hour >= 11 && hour <= 13) return "Jam Makan: Matikan fitur 'Bebas', geser ke pusat kuliner/mall terdekat.";
+    if (hour >= 16 && hour <= 19) return "Jam Pulang: Standby di gedung perkantoran. Cari orderan arah pulang ke timur/selatan.";
+    if (hour >= 21) return "Mode Malam: Geser ke area hiburan, stasiun, atau RS 24 Jam.";
     
-    return "Gunakan teknik 'Grid System'. Scan area 500m, jika 10 menit hening, geser ke titik niche terdekat.";
+    return "Teknik Grid: Jangan diam > 10 menit di satu titik. Geser radius 500m ke titik keramaian baru.";
 };
 
 export const getDailyMotivation = (): string => {
@@ -154,9 +151,9 @@ export const getDailyMotivation = (): string => {
 };
 
 export const getFinancialAdviceLogic = (revenue: number, expenses: number, targetRevenue: number): string => {
-    if (revenue === 0) return "Dompet kosong. Fokus orderan pendek untuk 'pecah telur' dan bangun mood.";
+    if (revenue === 0) return "Belum pecah telur? Cari orderan jarak pendek dulu buat mancing server.";
     const expenseRatio = (expenses / revenue) * 100;
-    if (expenseRatio > 30) return "PERINGATAN: Biaya operasional > 30%. Kurangi jajan, fokus kejar setoran.";
-    if (revenue >= targetRevenue) return "Target Tembus! Tabung kelebihannya untuk servis motor bulan depan.";
-    return "On Track. Pertahankan ritme, jaga stamina.";
+    if (expenseRatio > 35) return "PERINGATAN: Pengeluaran boros! Kurangi jajan, bawa bekal air minum.";
+    if (revenue >= targetRevenue) return "Target Tembus! Sisa waktu bisa buat istirahat atau bonus tabungan.";
+    return "Lanjut terus! Jaga ritme, jangan lupa istirahat sejenak.";
 };
