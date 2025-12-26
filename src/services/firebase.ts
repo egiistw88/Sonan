@@ -37,11 +37,10 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-// Using browserPopupRedirectResolver helps with some mobile browser restrictions
-const auth = getAuth(app); 
+const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Force account selection every time to avoid getting stuck on wrong account
+// Force account selection every time
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({
   prompt: 'select_account'
@@ -64,8 +63,7 @@ try {
 export const loginWithGoogle = async () => {
   try {
     console.log("Attempting Google Sign In...");
-    // Using standard popup. On some mobile environments, Redirect might be preferred, 
-    // but Popup is generally better for SPAs to maintain state without page reload logic.
+    // MENGGUNAKAN RESOLVER: Ini kunci agar jalan lancar di mobile browser
     const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     console.log("Login Success:", result.user.email);
     return result.user;
