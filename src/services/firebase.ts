@@ -6,8 +6,7 @@ import {
   signInWithPopup, 
   signOut,
   onAuthStateChanged,
-  User,
-  browserPopupRedirectResolver
+  User
 } from "firebase/auth";
 import { 
   getFirestore, 
@@ -37,10 +36,10 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const auth = getAuth(app); 
 const db = getFirestore(app);
 
-// Force account selection every time
+// Configure Provider
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({
   prompt: 'select_account'
@@ -63,8 +62,8 @@ try {
 export const loginWithGoogle = async () => {
   try {
     console.log("Attempting Google Sign In...");
-    // MENGGUNAKAN RESOLVER: Ini kunci agar jalan lancar di mobile browser
-    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    // Menggunakan standard popup tanpa resolver eksplisit untuk kompatibilitas maksimal
+    const result = await signInWithPopup(auth, provider);
     console.log("Login Success:", result.user.email);
     return result.user;
   } catch (error: any) {
