@@ -20,13 +20,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSkip }) => {
     
     try {
       await loginWithGoogle();
-      // App.tsx will auto-detect user change and redirect
-      triggerHaptic('success');
+      // Halaman akan redirect, loading tetap true sampai pindah halaman
     } catch (err: any) {
       console.error("Login Error:", err);
       let msg = "Gagal terhubung ke Google.";
       
-      if (err.code === 'auth/popup-closed-by-user') msg = "Login dibatalkan (Popup ditutup).";
+      if (err.code === 'auth/popup-closed-by-user') msg = "Login dibatalkan.";
       else if (err.code === 'auth/network-request-failed') msg = "Koneksi internet bermasalah. Cek sinyal.";
       else if (err.code === 'auth/unauthorized-domain') msg = "Domain aplikasi belum diizinkan.";
       else if (err?.message) msg = err.message;
@@ -48,11 +47,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSkip }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[50] bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+    <div className="fixed inset-0 z-[50] bg-slate-950 flex flex-col items-center justify-center p-6 overflow-hidden font-sans">
       
       {/* Background Ambience */}
-      <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[60%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse-slow"></div>
-      <div className="absolute bottom-[-20%] right-[-20%] w-[80%] h-[60%] bg-yellow-600/10 rounded-full blur-[120px] animate-pulse-slow" style={{animationDelay: '1s'}}></div>
+      <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[60%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse-slow pointer-events-none"></div>
+      <div className="absolute bottom-[-20%] right-[-20%] w-[80%] h-[60%] bg-yellow-600/10 rounded-full blur-[120px] animate-pulse-slow pointer-events-none" style={{animationDelay: '1s'}}></div>
 
       <div className="relative z-10 w-full max-w-sm flex flex-col items-center text-center">
         
@@ -90,7 +89,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSkip }) => {
                 <span className="text-xl">⚠️</span> 
                 <div>
                     <p>{errorMsg}</p>
-                    {errorMsg.includes("cancelled") && <p className="text-[10px] font-normal mt-1 opacity-80">Pastikan tidak menutup popup login.</p>}
                 </div>
             </div>
         )}
@@ -103,7 +101,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSkip }) => {
                 className="w-full bg-white hover:bg-slate-200 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_25px_rgba(255,255,255,0.15)] flex items-center justify-center gap-3 transition-all active:scale-95 group relative overflow-hidden"
             >
                 {loading ? (
-                    <div className="w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm">Mengalihkan ke Google...</span>
+                    </div>
                 ) : (
                     <>
                         <img src="https://www.google.com/favicon.ico" alt="G" className="w-5 h-5" />
@@ -125,17 +126,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSkip }) => {
         </p>
       </div>
 
-      {/* --- CUSTOM CONFIRMATION DIALOG (Fixed Z-Index & Opacity) --- */}
+      {/* --- CUSTOM CONFIRMATION DIALOG (High Z-Index) --- */}
       {showSkipConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
             {/* Solid Dark Backdrop */}
             <div 
-                className="absolute inset-0 bg-black/90 backdrop-blur-sm transition-opacity" 
+                className="absolute inset-0 bg-black/90 backdrop-blur-sm" 
                 onClick={() => setShowSkipConfirm(false)}
             ></div>
             
-            {/* Modal Card - Fully Opaque Background */}
-            <div className="relative bg-slate-900 w-full max-w-xs rounded-3xl border border-slate-600 shadow-2xl p-6 animate-slide-up text-center z-[101]">
+            {/* Modal Card - Solid Background */}
+            <div className="relative bg-slate-900 w-full max-w-xs rounded-3xl border border-slate-600 shadow-2xl p-6 animate-slide-up text-center z-[1000]">
                 <div className="w-16 h-16 bg-yellow-500/20 text-yellow-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-yellow-500/30">
                     ⚠️
                 </div>

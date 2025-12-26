@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
   GoogleAuthProvider, 
-  signInWithPopup, 
+  signInWithRedirect, 
   signOut,
   onAuthStateChanged,
   User
@@ -61,11 +61,10 @@ try {
 // --- AUTH SERVICE ---
 export const loginWithGoogle = async () => {
   try {
-    console.log("Attempting Google Sign In...");
-    // Menggunakan standard popup tanpa resolver eksplisit untuk kompatibilitas maksimal
-    const result = await signInWithPopup(auth, provider);
-    console.log("Login Success:", result.user.email);
-    return result.user;
+    console.log("Attempting Google Sign In (Redirect)...");
+    // Menggunakan signInWithRedirect yang lebih stabil di mobile
+    await signInWithRedirect(auth, provider);
+    // Tidak ada return di sini karena halaman akan reload/redirect
   } catch (error: any) {
     console.error("Login failed detailed:", error);
     throw error;
